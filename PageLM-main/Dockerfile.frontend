@@ -6,6 +6,7 @@ COPY PageLM-main/frontend/package*.json ./
 RUN npm ci
 
 COPY PageLM-main/frontend ./
+COPY PageLM-main/logo /app/PageLM-main/logo
 
 ARG VITE_BACKEND_URL=http://localhost:5000
 ARG VITE_TIMEOUT=90000
