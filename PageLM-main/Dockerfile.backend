@@ -1,0 +1,49 @@
+FROM node:20-bookworm-slim AS node_runtime
+
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    NPM_CONFIG_UPDATE_NOTIFIER=false \
+    BILIBILI_MCP_ENTRY=/app/bilibili-mcp-js-main/dist/index.js
+
+# Bring Node.js runtime into Python image so FastAPI can launch the bridge process.
+COPY --from=node_runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=node_runtime /usr/local/bin/npm /usr/local/bin/npm
+COPY --from=node_runtime /usr/local/bin/npx /usr/local/bin/npx
+COPY --from=node_runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+RUN npm config set registry ${NPM_REGISTRY}
+
+COPY PageLM-main/requirements.txt /app/PageLM-main/requirements.txt
+RUN pip install --no-cache-dir -r /app/PageLM-main/requirements.txt
+
+COPY PageLM-main/backend/package*.json /app/PageLM-main/backend/
+RUN cd /app/PageLM-main/backend \
+    && npm install --omit=dev \
+    && npm cache clean --force
+
+COPY bilibili-mcp-js-main/package*.json /app/bilibili-mcp-js-main/
+RUN cd /app/bilibili-mcp-js-main \
+    && npm install \
+    && npm cache clean --force
+
+COPY bilibili-mcp-js-main /app/bilibili-mcp-js-main
+RUN cd /app/bilibili-mcp-js-main && npm run build
+
+COPY PageLM-main /app/PageLM-main
+
+WORKDIR /app/PageLM-main/backend
+
+EXPOSE 5000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000"]

@@ -1,0 +1,46 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: PageLM-main/Dockerfile.backend
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    image: pagelm-backend:latest
+    container_name: pagelm-backend
+    env_file:
+      - PageLM-main/.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 5000
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+      BILIBILI_MCP_ENTRY: /app/bilibili-mcp-js-main/dist/index.js
+      BILIBILI_BRIDGE_HOST: 127.0.0.1
+      BILIBILI_BRIDGE_PORT: 5001
+    volumes:
+      - ./PageLM-main/storage:/app/PageLM-main/storage
+      - ./PageLM-main/models:/app/PageLM-main/models
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: PageLM-main/Dockerfile.frontend
+      args:
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:5000}
+        VITE_TIMEOUT: ${VITE_TIMEOUT:-90000}
+    image: pagelm-frontend:latest
+    container_name: pagelm-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    restart: unless-stopped

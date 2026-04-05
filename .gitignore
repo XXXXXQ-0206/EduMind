@@ -1,0 +1,44 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.npm/
+.pnpm-store/
+
+# Build / cache
+.cache/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment / secrets
+.env
+**/.env
+!.env.example
+
+# Runtime generated data
+PageLM-main/storage/
+
+# Local model artifacts (large files)
+PageLM-main/models/
