@@ -806,7 +806,7 @@ export function listTeachingVideos(role?: "student" | "teacher") {
 export function getTeachingVideoDetail(id: string) {
   return req<{
     ok: true;
-    video: { id: string; title?: string };
+    video: { id: string; title?: string; updated_at?: string };
     script: string;
     videoUrl?: string;
     localVideoUrl?: string;
