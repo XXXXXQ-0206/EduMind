@@ -9,11 +9,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     NPM_CONFIG_UPDATE_NOTIFIER=false \
     BILIBILI_MCP_ENTRY=/app/bilibili-mcp-js-main/dist/index.js
 
-# Bring Node.js runtime into Python image so FastAPI can launch the bridge process.
-COPY --from=node_runtime /usr/local/bin/node /usr/local/bin/node
-COPY --from=node_runtime /usr/local/bin/npm /usr/local/bin/npm
-COPY --from=node_runtime /usr/local/bin/npx /usr/local/bin/npx
-COPY --from=node_runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
+# Bring a complete Node.js runtime into the Python image.
+COPY --from=node_runtime /usr/local/ /usr/local/
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl \
