@@ -30,6 +30,7 @@ from api.routes import (
     quiz,
     slides,
     speaking,
+    tasks,
     teaching_video,
     transcriber,
 )
@@ -74,6 +75,7 @@ SERVICE_BOUNDARIES: tuple[ServiceBoundary, ...] = (
             RouteMount(companion.router, "companion"),
             RouteMount(exam.router, "exam"),
             RouteMount(debate.router, "debate"),
+            RouteMount(tasks.router, "tasks"),
             RouteMount(planner.router, "planner"),
         ),
     ),

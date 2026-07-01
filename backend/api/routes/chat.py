@@ -232,6 +232,7 @@ async def create_chat_handler(request: ChatRequest, user: AuthUser = Depends(req
                 "ok": True,
                 "chatId": chat_id,
                 "stream": f"/ws/chat?chatId={chat_id}",
+                "events": f"/tasks/chat/{chat_id}/events",
             }
         )
 

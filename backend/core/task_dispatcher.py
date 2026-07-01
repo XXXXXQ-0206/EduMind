@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 _HANDLERS: Dict[str, TaskHandler] = {}
 
 
+class UnknownTaskKindError(ValueError):
+    """Raised when a queued task kind has no registered handler."""
+
+
 def register_task_handler(kind: str, handler: TaskHandler) -> None:
     normalized = (kind or "").strip()
     if not normalized:
@@ -27,12 +31,39 @@ def get_task_handlers() -> Dict[str, TaskHandler]:
     return dict(_HANDLERS)
 
 
+async def execute_registered_task(kind: str, task_id: str) -> None:
+    normalized = (kind or "").strip()
+    handler = _HANDLERS.get(normalized)
+    if handler is None:
+        raise UnknownTaskKindError(f"unknown task kind: {normalized}")
+    await handler(task_id)
+
+
+async def enqueue_celery_generation_task(kind: str, task_id: str) -> None:
+    """Publish a generation task to Celery.
+
+    Import lazily so local inline/test runs do not require Celery to be imported.
+    """
+
+    from core.celery_app import celery_app
+
+    celery_app.send_task(
+        "edumind.generation.run",
+        args=(kind, task_id),
+        queue=config.celery_task_queue_name,
+        routing_key=config.celery_task_queue_name,
+    )
+
+
 async def dispatch_generation_task(kind: str, task_id: str, inline_starter: TaskHandler) -> None:
     """Dispatch a generation task using the configured execution mode."""
 
     provider = (config.task_queue_provider or "inline").strip().lower()
     if provider in {"inline", "memory", "none"}:
         await inline_starter(task_id)
+        return
+    if provider == "celery":
+        await enqueue_celery_generation_task(kind, task_id)
         return
     await create_task_queue().enqueue(TaskEnvelope(kind=kind, id=task_id))
 
@@ -46,14 +77,12 @@ async def run_task_worker(stop_event: asyncio.Event | None = None) -> None:
         task = await queue.dequeue(timeout_seconds=max(1, int(config.task_worker_poll_seconds)))
         if task is None:
             continue
-        handler = _HANDLERS.get(task.kind)
-        if handler is None:
-            logger.warning("discarding unknown generation task kind=%s id=%s", task.kind, task.id)
-            await queue.fail(task, f"unknown task kind: {task.kind}")
-            continue
         try:
-            await handler(task.id)
+            await execute_registered_task(task.kind, task.id)
             await queue.ack(task)
+        except UnknownTaskKindError as exc:
+            logger.warning("discarding unknown generation task kind=%s id=%s", task.kind, task.id)
+            await queue.fail(task, str(exc))
         except Exception:
             logger.exception("generation task failed kind=%s id=%s", task.kind, task.id)
             await queue.fail(task, "handler failed")

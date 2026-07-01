@@ -1,7 +1,8 @@
 import { env } from "../config/env";
 import { getAuthToken, writeAuthSession } from "./auth";
 
-export type ChatStartResponse = { ok: true; chatId: string; stream: string };
+export type TaskStartLinks = { stream: string; events?: string };
+export type ChatStartResponse = { ok: true; chatId: string } & TaskStartLinks;
 export type ChatMessage = { role: "user" | "assistant"; content: string; at: number };
 export type ChatInfo = { id: string; title?: string; createdAt?: number };
 export type ChatsList = { ok: true; chats: ChatInfo[] };
@@ -57,7 +58,7 @@ export type PodcastMeta = {
   status?: GenerationRecordStatus;
   error?: string;
 };
-export type QuizStartResponse = { ok: true; quizId: string; stream: string }
+export type QuizStartResponse = { ok: true; quizId: string } & TaskStartLinks
 export type QuizEvent =
   | { type: "ready"; quizId?: string }
   | { type: "phase"; value: string }
@@ -74,7 +75,7 @@ export type PaperItem = {
   answer?: string;
   explanation?: string;
 };
-export type PaperStartResponse = { ok: true; paperId: string; stream: string };
+export type PaperStartResponse = { ok: true; paperId: string } & TaskStartLinks;
 export type PaperEvent = { type: "ready" | "phase" | "paper" | "done" | "error"; paperId?: string; value?: string; paper?: PaperItem[]; error?: string };
 export type QuizAttempt = {
   questionId: number;
@@ -138,7 +139,7 @@ export type WeakPoint = {
   suggestion: string;
   questionIndices: number[];
 };
-export type SmartNotesStart = { ok: true; noteId: string; stream: string }
+export type SmartNotesStart = { ok: true; noteId: string } & TaskStartLinks
 export type LibraryFile = {
   id: string;
   filename: string;
@@ -376,6 +377,38 @@ function wsURL(path: string) {
   const token = getAuthToken();
   if (token) full.searchParams.set("token", token);
   return full.toString();
+}
+
+function sseURL(path: string) {
+  const u = new URL(env.backend);
+  const full = new URL(`${u.protocol}//${u.host}${path}`);
+  const token = getAuthToken();
+  if (token) full.searchParams.set("token", token);
+  return full.toString();
+}
+
+export type TaskEventKind = "chat" | "quiz" | "smartnotes" | "podcast" | "paper" | "exam" | "teaching-video";
+
+export function connectTaskEvents<T extends { type?: string; error?: string }>(
+  kind: TaskEventKind,
+  taskId: string,
+  onEvent: (ev: T) => void,
+) {
+  const source = new EventSource(sseURL(`/tasks/${kind}/${encodeURIComponent(taskId)}/events`));
+  source.onmessage = (message) => {
+    try {
+      onEvent(JSON.parse(message.data) as T);
+    } catch {
+      onEvent({ type: "error", error: "invalid_message" } as T);
+    }
+  };
+  source.onerror = () => onEvent({ type: "error", error: "stream_error" } as T);
+  return {
+    source,
+    close: () => {
+      try { source.close(); } catch { }
+    },
+  };
 }
 
 export async function register(username: string, password: string) {
@@ -635,7 +668,7 @@ export async function getExams() {
 }
 
 export async function startExam(examId: string) {
-  return req<{ ok: true; runId: string; stream: string }>(
+  return req<{ ok: true; runId: string } & TaskStartLinks>(
     `${env.backend}/exam`,
     {
       method: "POST",
@@ -787,7 +820,7 @@ export function saveQuizAttemptAnswer(quizId: string, answer: QuizAttempt) {
 }
 
 // ---------- 教学视频 (teaching video) ----------
-export type TeachingVideoStartResponse = { ok: true; videoId: string; stream: string };
+export type TeachingVideoStartResponse = { ok: true; videoId: string } & TaskStartLinks;
 export type TeachingVideoEvent =
   | { type: "ready"; videoId?: string }
   | { type: "phase"; value: string }
@@ -893,7 +926,7 @@ export async function podcastStart(payload: {
   materialIds?: string[];
   length?: "short" | "medium" | "long";
 }) {
-  return req<{ ok: boolean; pid: string; stream: string }>(`${env.backend}/podcast`, {
+  return req<{ ok: boolean; pid: string } & TaskStartLinks>(`${env.backend}/podcast`, {
     method: "POST",
     headers: jsonHeaders({}),
     body: JSON.stringify(payload),

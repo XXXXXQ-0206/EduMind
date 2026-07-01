@@ -126,8 +126,14 @@ services:
       EVENT_BUS_PROVIDER: ${EVENT_BUS_PROVIDER:-redis}
       TASK_LEASE_PROVIDER: ${TASK_LEASE_PROVIDER:-redis}
       TASK_LEASE_TTL_SECONDS: ${TASK_LEASE_TTL_SECONDS:-1800}
-      TASK_QUEUE_PROVIDER: ${TASK_QUEUE_PROVIDER:-redis}
+      TASK_QUEUE_PROVIDER: ${TASK_QUEUE_PROVIDER:-celery}
       TASK_QUEUE_NAME: ${TASK_QUEUE_NAME:-edumind:tasks}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      CELERY_TASK_QUEUE_NAME: ${CELERY_TASK_QUEUE_NAME:-edumind:generation}
+      CELERY_VISIBILITY_TIMEOUT_SECONDS: ${CELERY_VISIBILITY_TIMEOUT_SECONDS:-3600}
+      CELERY_TASK_MAX_RETRIES: ${CELERY_TASK_MAX_RETRIES:-3}
+      CELERY_TASK_RETRY_DELAY_SECONDS: ${CELERY_TASK_RETRY_DELAY_SECONDS:-10}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-edumind}
@@ -141,6 +147,8 @@ services:
       - ./storage:/app/storage
       - ./models:/app/models
     depends_on:
+      redis:
+        condition: service_healthy
       identity:
         condition: service_healthy
       ai-core:
@@ -275,8 +283,14 @@ services:
       EVENT_BUS_PROVIDER: ${EVENT_BUS_PROVIDER:-redis}
       TASK_LEASE_PROVIDER: ${TASK_LEASE_PROVIDER:-redis}
       TASK_LEASE_TTL_SECONDS: ${TASK_LEASE_TTL_SECONDS:-1800}
-      TASK_QUEUE_PROVIDER: ${TASK_QUEUE_PROVIDER:-redis}
+      TASK_QUEUE_PROVIDER: ${TASK_QUEUE_PROVIDER:-celery}
       TASK_QUEUE_NAME: ${TASK_QUEUE_NAME:-edumind:tasks}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      CELERY_TASK_QUEUE_NAME: ${CELERY_TASK_QUEUE_NAME:-edumind:generation}
+      CELERY_VISIBILITY_TIMEOUT_SECONDS: ${CELERY_VISIBILITY_TIMEOUT_SECONDS:-3600}
+      CELERY_TASK_MAX_RETRIES: ${CELERY_TASK_MAX_RETRIES:-3}
+      CELERY_TASK_RETRY_DELAY_SECONDS: ${CELERY_TASK_RETRY_DELAY_SECONDS:-10}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-edumind}
@@ -293,6 +307,8 @@ services:
       - ./storage:/app/storage
       - ./models:/app/models
     depends_on:
+      redis:
+        condition: service_healthy
       identity:
         condition: service_healthy
       ai-core:
@@ -328,8 +344,14 @@ services:
       EVENT_BUS_PROVIDER: ${EVENT_BUS_PROVIDER:-redis}
       TASK_LEASE_PROVIDER: ${TASK_LEASE_PROVIDER:-redis}
       TASK_LEASE_TTL_SECONDS: ${TASK_LEASE_TTL_SECONDS:-1800}
-      TASK_QUEUE_PROVIDER: ${TASK_QUEUE_PROVIDER:-redis}
+      TASK_QUEUE_PROVIDER: ${TASK_QUEUE_PROVIDER:-celery}
       TASK_QUEUE_NAME: ${TASK_QUEUE_NAME:-edumind:tasks}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      CELERY_TASK_QUEUE_NAME: ${CELERY_TASK_QUEUE_NAME:-edumind:generation}
+      CELERY_VISIBILITY_TIMEOUT_SECONDS: ${CELERY_VISIBILITY_TIMEOUT_SECONDS:-3600}
+      CELERY_TASK_MAX_RETRIES: ${CELERY_TASK_MAX_RETRIES:-3}
+      CELERY_TASK_RETRY_DELAY_SECONDS: ${CELERY_TASK_RETRY_DELAY_SECONDS:-10}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-edumind}
@@ -343,6 +365,8 @@ services:
       - ./storage:/app/storage
       - ./models:/app/models
     depends_on:
+      redis:
+        condition: service_healthy
       identity:
         condition: service_healthy
       ai-core:
@@ -375,9 +399,17 @@ services:
       EVENT_BUS_PROVIDER: ${EVENT_BUS_PROVIDER:-redis}
       TASK_LEASE_PROVIDER: ${TASK_LEASE_PROVIDER:-redis}
       TASK_LEASE_TTL_SECONDS: ${TASK_LEASE_TTL_SECONDS:-1800}
-      TASK_QUEUE_PROVIDER: ${TASK_QUEUE_PROVIDER:-redis}
+      TASK_QUEUE_PROVIDER: ${TASK_QUEUE_PROVIDER:-celery}
       TASK_QUEUE_NAME: ${TASK_QUEUE_NAME:-edumind:tasks}
       TASK_WORKER_POLL_SECONDS: ${TASK_WORKER_POLL_SECONDS:-2}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      CELERY_TASK_QUEUE_NAME: ${CELERY_TASK_QUEUE_NAME:-edumind:generation}
+      CELERY_VISIBILITY_TIMEOUT_SECONDS: ${CELERY_VISIBILITY_TIMEOUT_SECONDS:-3600}
+      CELERY_TASK_MAX_RETRIES: ${CELERY_TASK_MAX_RETRIES:-3}
+      CELERY_TASK_RETRY_DELAY_SECONDS: ${CELERY_TASK_RETRY_DELAY_SECONDS:-10}
+      CELERY_WORKER_CONCURRENCY: ${CELERY_WORKER_CONCURRENCY:-2}
+      CELERY_WORKER_POOL: ${CELERY_WORKER_POOL:-prefork}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-edumind}
