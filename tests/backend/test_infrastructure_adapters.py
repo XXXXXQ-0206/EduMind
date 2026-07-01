@@ -23,7 +23,12 @@ from scripts.migrate_storage_to_adapters import (  # noqa: E402
 )
 from utils import storage as storage_module  # noqa: E402
 from utils.feature_support import build_selected_files_context, extract_file_text_from_meta  # noqa: E402
-from utils.live_events import forward_live_events, publish_live_event  # noqa: E402
+from utils.live_events import (  # noqa: E402
+    format_sse_message,
+    forward_live_events,
+    publish_live_event,
+    stream_live_events_sse,
+)
 from utils.storage import JSONStorage  # noqa: E402
 from utils.upload_objects import upload_object_key_from_meta  # noqa: E402
 
@@ -500,6 +505,28 @@ def test_task_worker_acknowledges_success_and_fails_unknown_tasks(monkeypatch):
     asyncio.run(run())
 
 
+def test_dispatch_generation_task_uses_celery_provider(monkeypatch):
+    from core import task_dispatcher
+
+    async def run():
+        calls = []
+
+        async def fake_enqueue(kind, task_id):
+            calls.append((kind, task_id))
+
+        async def inline_starter(task_id):
+            raise AssertionError("celery provider should not start inline")
+
+        monkeypatch.setattr(config, "task_queue_provider", "celery")
+        monkeypatch.setattr(task_dispatcher, "enqueue_celery_generation_task", fake_enqueue)
+
+        await task_dispatcher.dispatch_generation_task("quiz", "one", inline_starter)
+
+        assert calls == [("quiz", "one")]
+
+    asyncio.run(run())
+
+
 def test_live_event_forwarder_sends_websocket_json():
     class FakeWebSocket:
         def __init__(self):
@@ -522,6 +549,34 @@ def test_live_event_forwarder_sends_websocket_json():
             await forwarder
         except asyncio.CancelledError:
             pass
+
+    asyncio.run(run())
+
+
+def test_sse_message_format_is_parseable_json():
+    message = format_sse_message({"type": "ready", "text": "你好"})
+
+    assert message.endswith("\n\n")
+    first_line = message.splitlines()[0]
+    assert first_line.startswith("data: ")
+    assert json.loads(first_line.removeprefix("data: ")) == {"type": "ready", "text": "你好"}
+
+
+def test_sse_stream_yields_published_events():
+    async def run():
+        bus = InMemoryEventBus()
+        stream = stream_live_events_sse("task:one", heartbeat_seconds=10, bus=bus)
+        first = asyncio.create_task(anext(stream))
+        await asyncio.sleep(0)
+
+        await bus.publish("task:one", {"type": "phase", "value": "generating"})
+
+        chunk = await asyncio.wait_for(first, timeout=1)
+        assert json.loads(chunk.splitlines()[0].removeprefix("data: ")) == {
+            "type": "phase",
+            "value": "generating",
+        }
+        await stream.aclose()
 
     asyncio.run(run())
 

@@ -291,6 +291,7 @@ async def create_smartnotes(request: SmartNotesRequest, user: AuthUser = Depends
                 "ok": True,
                 "noteId": note_id,
                 "stream": f"/ws/smartnotes?noteId={note_id}",
+                "events": f"/tasks/smartnotes/{note_id}/events",
             },
             status_code=202,
         )

@@ -372,7 +372,7 @@ BILIBILI_MCP_ENTRY=services/bilibili-mcp/dist/index.js
 ## 特性概览
 
 - **双端完整**：教师端备课与授课、学生端学习与练习流程均可用
-- **流式输出**：WebSocket 支持对话、笔记、播客等流式生成
+- **长任务运行**：Celery + Redis 承载生成任务，WebSocket/SSE 推送对话、笔记、播客等进度事件
 - **多模型**：支持多 LLM、多 TTS，可本地 Ollama 部署
 - **模块化**：前后端分离，Agent 与路由清晰，便于扩展与二次开发
 

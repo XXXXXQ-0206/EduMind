@@ -31,9 +31,30 @@ def resolve_app_target() -> tuple[str, int]:
     return "main:app", int(os.environ.get("PORT", config.port))
 
 
+def run_celery_worker() -> None:
+    from core.celery_app import celery_app
+
+    argv = [
+        "worker",
+        "--loglevel=INFO",
+        "-Q",
+        config.celery_task_queue_name,
+        "--concurrency",
+        str(max(1, int(config.celery_worker_concurrency or 1))),
+    ]
+    worker_pool = (config.celery_worker_pool or "").strip()
+    if worker_pool:
+        argv.extend(["--pool", worker_pool])
+    celery_app.worker_main(argv)
+
+
 if __name__ == "__main__":
     role = os.environ.get("BACKEND_ROLE", "monolith").strip().lower()
     if is_worker_role(role):
+        if (config.task_queue_provider or "").strip().lower() == "celery":
+            run_celery_worker()
+            raise SystemExit(0)
+
         from worker_app import main as worker_main
 
         import asyncio

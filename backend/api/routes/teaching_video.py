@@ -200,6 +200,7 @@ async def create_teaching_video(request: TeachingVideoRequest, user: AuthUser = 
                 "ok": True,
                 "videoId": video_id,
                 "stream": f"/ws/teaching-video?videoId={video_id}",
+                "events": f"/tasks/teaching-video/{video_id}/events",
             },
         )
     except Exception as e:
@@ -665,4 +666,3 @@ async def delete_teaching_video_handler(video_id: str, user: AuthUser = Depends(
         return {"ok": True}
     except Exception as e:
         return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
-

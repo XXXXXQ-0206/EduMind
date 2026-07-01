@@ -416,7 +416,12 @@ async def create_podcast(request: PodcastRequest, user: AuthUser = Depends(requi
         await dispatch_generation_task("podcast", pid, _ensure_podcast_generation)
 
         return JSONResponse(
-            content={"ok": True, "pid": pid, "stream": f"/ws/podcast?pid={pid}"},
+            content={
+                "ok": True,
+                "pid": pid,
+                "stream": f"/ws/podcast?pid={pid}",
+                "events": f"/tasks/podcast/{pid}/events",
+            },
             status_code=202,
         )
 
