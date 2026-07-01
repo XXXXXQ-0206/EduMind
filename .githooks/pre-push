@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+if command -v git-lfs >/dev/null 2>&1; then
+  git lfs pre-push "$@"
+else
+  echo "[pre-push] git-lfs is not installed. Install Git LFS before pushing binary assets."
+  exit 2
+fi
+
+protected_branch="$(git branch --show-current)"
+if [ "$protected_branch" = "main" ] || [ "$protected_branch" = "master" ]; then
+  if git ls-remote --exit-code --heads origin "$protected_branch" >/dev/null 2>&1; then
+    echo "[pre-push] Direct pushes to $protected_branch are blocked locally."
+    echo "Push feature branches and merge by Pull Request."
+    echo "Repository maintainers may use --no-verify only for the first bootstrap push."
+    exit 1
+  fi
+fi
+
+echo "[pre-push] OK"

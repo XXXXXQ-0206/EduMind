@@ -1,46 +1,486 @@
 services:
-  backend:
+  api-gateway:
     build:
       context: .
-      dockerfile: PageLM-main/Dockerfile.backend
+      dockerfile: deploy/docker/Dockerfile.backend
       args:
+        NODE_IMAGE: ${DOCKER_NODE_IMAGE:-docker.1ms.run/library/node:20-alpine}
+        PYTHON_IMAGE: ${DOCKER_PYTHON_IMAGE:-dockerproxy.net/library/python:3.11-slim-bookworm}
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian}
+        NODE_VERSION: ${NODE_VERSION:-20.20.2}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-    image: pagelm-backend:latest
-    container_name: pagelm-backend
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    image: edumind-backend:latest
+    container_name: edumind-api-gateway
     env_file:
-      - PageLM-main/.env
+      - .env
     environment:
+      BACKEND_ROLE: gateway
       HOST: 0.0.0.0
       PORT: 5000
       HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
-      BILIBILI_MCP_ENTRY: /app/bilibili-mcp-js-main/dist/index.js
-      BILIBILI_BRIDGE_HOST: 127.0.0.1
-      BILIBILI_BRIDGE_PORT: 5001
+      IDENTITY_URL: http://identity:5101
+      AUTH_VALIDATION_MODE: local
+      KV_STORE_PROVIDER: ${KV_STORE_PROVIDER:-postgres}
+      POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://edumind:edumind@postgres:5432/edumind}"
+      OBJECT_STORE_PROVIDER: ${OBJECT_STORE_PROVIDER:-s3}
+      OBJECT_STORE_BASE_URL: ${OBJECT_STORE_BASE_URL:-http://localhost:9000/edumind}
+      EVENT_BUS_PROVIDER: ${EVENT_BUS_PROVIDER:-redis}
+      TASK_LEASE_PROVIDER: ${TASK_LEASE_PROVIDER:-redis}
+      TASK_LEASE_TTL_SECONDS: ${TASK_LEASE_TTL_SECONDS:-1800}
+      TASK_QUEUE_PROVIDER: inline
+      GATEWAY_HEALTH_TIMEOUT_SECONDS: ${GATEWAY_HEALTH_TIMEOUT_SECONDS:-2}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-edumind}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-edumind}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-edumind-secret}
+      LEARNING_CONTENT_URL: http://learning-content:5102
+      ASSET_LIBRARY_URL: http://asset-library:5103
+      AI_CORE_URL: http://ai-core:5106
+      MEDIA_GENERATION_URL: http://media-generation:5104
+      TEACHING_CONTENT_URL: http://teaching-content:5105
     volumes:
-      - ./PageLM-main/storage:/app/PageLM-main/storage
-      - ./PageLM-main/models:/app/PageLM-main/models
+      - ./storage:/app/storage
+      - ./models:/app/models
     ports:
       - "5000:5000"
+    depends_on:
+      identity:
+        condition: service_healthy
+      learning-content:
+        condition: service_healthy
+      asset-library:
+        condition: service_healthy
+      ai-core:
+        condition: service_healthy
+      media-generation:
+        condition: service_healthy
+      teaching-content:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5000/health"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5000/health/ready"]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 30s
     restart: unless-stopped
 
+  identity:
+    image: edumind-backend:latest
+    container_name: edumind-identity
+    env_file:
+      - .env
+    environment:
+      BACKEND_ROLE: service
+      SERVICE_NAME: identity
+      AUTH_VALIDATION_MODE: local
+      KV_STORE_PROVIDER: ${KV_STORE_PROVIDER:-postgres}
+      POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://edumind:edumind@postgres:5432/edumind}"
+      OBJECT_STORE_PROVIDER: ${OBJECT_STORE_PROVIDER:-s3}
+      OBJECT_STORE_BASE_URL: ${OBJECT_STORE_BASE_URL:-http://localhost:9000/edumind}
+      EVENT_BUS_PROVIDER: ${EVENT_BUS_PROVIDER:-redis}
+      TASK_LEASE_PROVIDER: ${TASK_LEASE_PROVIDER:-redis}
+      TASK_LEASE_TTL_SECONDS: ${TASK_LEASE_TTL_SECONDS:-1800}
+      TASK_QUEUE_PROVIDER: inline
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-edumind}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-edumind}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-edumind-secret}
+      HOST: 0.0.0.0
+      PORT: 5101
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+    volumes:
+      - ./storage:/app/storage
+      - ./models:/app/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5101/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  learning-content:
+    image: edumind-backend:latest
+    container_name: edumind-learning-content
+    env_file:
+      - .env
+    environment:
+      BACKEND_ROLE: service
+      SERVICE_NAME: learning-content
+      IDENTITY_URL: http://identity:5101
+      AI_CORE_URL: http://ai-core:5106
+      AUTH_VALIDATION_MODE: remote
+      LLM_EXECUTION_MODE: remote
+      KV_STORE_PROVIDER: ${KV_STORE_PROVIDER:-postgres}
+      POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://edumind:edumind@postgres:5432/edumind}"
+      OBJECT_STORE_PROVIDER: ${OBJECT_STORE_PROVIDER:-s3}
+      OBJECT_STORE_BASE_URL: ${OBJECT_STORE_BASE_URL:-http://localhost:9000/edumind}
+      EVENT_BUS_PROVIDER: ${EVENT_BUS_PROVIDER:-redis}
+      TASK_LEASE_PROVIDER: ${TASK_LEASE_PROVIDER:-redis}
+      TASK_LEASE_TTL_SECONDS: ${TASK_LEASE_TTL_SECONDS:-1800}
+      TASK_QUEUE_PROVIDER: ${TASK_QUEUE_PROVIDER:-redis}
+      TASK_QUEUE_NAME: ${TASK_QUEUE_NAME:-edumind:tasks}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-edumind}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-edumind}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-edumind-secret}
+      HOST: 0.0.0.0
+      PORT: 5102
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+    volumes:
+      - ./storage:/app/storage
+      - ./models:/app/models
+    depends_on:
+      identity:
+        condition: service_healthy
+      ai-core:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5102/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  asset-library:
+    image: edumind-backend:latest
+    container_name: edumind-asset-library
+    env_file:
+      - .env
+    environment:
+      BACKEND_ROLE: service
+      SERVICE_NAME: asset-library
+      IDENTITY_URL: http://identity:5101
+      AUTH_VALIDATION_MODE: remote
+      KV_STORE_PROVIDER: ${KV_STORE_PROVIDER:-postgres}
+      POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://edumind:edumind@postgres:5432/edumind}"
+      OBJECT_STORE_PROVIDER: ${OBJECT_STORE_PROVIDER:-s3}
+      OBJECT_STORE_BASE_URL: ${OBJECT_STORE_BASE_URL:-http://localhost:9000/edumind}
+      EVENT_BUS_PROVIDER: ${EVENT_BUS_PROVIDER:-redis}
+      TASK_LEASE_PROVIDER: ${TASK_LEASE_PROVIDER:-redis}
+      TASK_LEASE_TTL_SECONDS: ${TASK_LEASE_TTL_SECONDS:-1800}
+      TASK_QUEUE_PROVIDER: inline
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-edumind}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-edumind}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-edumind-secret}
+      HOST: 0.0.0.0
+      PORT: 5103
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+    volumes:
+      - ./storage:/app/storage
+      - ./models:/app/models
+    depends_on:
+      identity:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5103/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  ai-core:
+    image: edumind-backend:latest
+    container_name: edumind-ai-core
+    env_file:
+      - .env
+    environment:
+      BACKEND_ROLE: service
+      SERVICE_NAME: ai-core
+      AUTH_VALIDATION_MODE: local
+      LLM_EXECUTION_MODE: local
+      KV_STORE_PROVIDER: ${KV_STORE_PROVIDER:-postgres}
+      POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://edumind:edumind@postgres:5432/edumind}"
+      OBJECT_STORE_PROVIDER: ${OBJECT_STORE_PROVIDER:-s3}
+      OBJECT_STORE_BASE_URL: ${OBJECT_STORE_BASE_URL:-http://localhost:9000/edumind}
+      EVENT_BUS_PROVIDER: ${EVENT_BUS_PROVIDER:-redis}
+      TASK_LEASE_PROVIDER: ${TASK_LEASE_PROVIDER:-redis}
+      TASK_LEASE_TTL_SECONDS: ${TASK_LEASE_TTL_SECONDS:-1800}
+      TASK_QUEUE_PROVIDER: inline
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-edumind}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-edumind}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-edumind-secret}
+      HOST: 0.0.0.0
+      PORT: 5106
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+    volumes:
+      - ./storage:/app/storage
+      - ./models:/app/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5106/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  bilibili-bridge:
+    image: edumind-backend:latest
+    container_name: edumind-bilibili-bridge
+    command: ["node", "services/bilibiliBridgeServer.js"]
+    working_dir: /app/backend
+    environment:
+      BILIBILI_BRIDGE_HOST: 0.0.0.0
+      BILIBILI_BRIDGE_PORT: 5001
+      BILIBILI_MCP_ENTRY: /app/services/bilibili-mcp/dist/index.js
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  media-generation:
+    image: edumind-backend:latest
+    container_name: edumind-media-generation
+    env_file:
+      - .env
+    environment:
+      BACKEND_ROLE: service
+      SERVICE_NAME: media-generation
+      IDENTITY_URL: http://identity:5101
+      AI_CORE_URL: http://ai-core:5106
+      AUTH_VALIDATION_MODE: remote
+      LLM_EXECUTION_MODE: remote
+      KV_STORE_PROVIDER: ${KV_STORE_PROVIDER:-postgres}
+      POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://edumind:edumind@postgres:5432/edumind}"
+      OBJECT_STORE_PROVIDER: ${OBJECT_STORE_PROVIDER:-s3}
+      OBJECT_STORE_BASE_URL: ${OBJECT_STORE_BASE_URL:-http://localhost:9000/edumind}
+      EVENT_BUS_PROVIDER: ${EVENT_BUS_PROVIDER:-redis}
+      TASK_LEASE_PROVIDER: ${TASK_LEASE_PROVIDER:-redis}
+      TASK_LEASE_TTL_SECONDS: ${TASK_LEASE_TTL_SECONDS:-1800}
+      TASK_QUEUE_PROVIDER: ${TASK_QUEUE_PROVIDER:-redis}
+      TASK_QUEUE_NAME: ${TASK_QUEUE_NAME:-edumind:tasks}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-edumind}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-edumind}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-edumind-secret}
+      HOST: 0.0.0.0
+      PORT: 5104
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+      BILIBILI_MCP_ENTRY: /app/services/bilibili-mcp/dist/index.js
+      BILIBILI_BRIDGE_URL: http://bilibili-bridge:5001
+      START_BILIBILI_BRIDGE: "false"
+    volumes:
+      - ./storage:/app/storage
+      - ./models:/app/models
+    depends_on:
+      identity:
+        condition: service_healthy
+      ai-core:
+        condition: service_healthy
+      bilibili-bridge:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5104/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  teaching-content:
+    image: edumind-backend:latest
+    container_name: edumind-teaching-content
+    env_file:
+      - .env
+    environment:
+      BACKEND_ROLE: service
+      SERVICE_NAME: teaching-content
+      IDENTITY_URL: http://identity:5101
+      AI_CORE_URL: http://ai-core:5106
+      AUTH_VALIDATION_MODE: remote
+      LLM_EXECUTION_MODE: remote
+      KV_STORE_PROVIDER: ${KV_STORE_PROVIDER:-postgres}
+      POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://edumind:edumind@postgres:5432/edumind}"
+      OBJECT_STORE_PROVIDER: ${OBJECT_STORE_PROVIDER:-s3}
+      OBJECT_STORE_BASE_URL: ${OBJECT_STORE_BASE_URL:-http://localhost:9000/edumind}
+      EVENT_BUS_PROVIDER: ${EVENT_BUS_PROVIDER:-redis}
+      TASK_LEASE_PROVIDER: ${TASK_LEASE_PROVIDER:-redis}
+      TASK_LEASE_TTL_SECONDS: ${TASK_LEASE_TTL_SECONDS:-1800}
+      TASK_QUEUE_PROVIDER: ${TASK_QUEUE_PROVIDER:-redis}
+      TASK_QUEUE_NAME: ${TASK_QUEUE_NAME:-edumind:tasks}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-edumind}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-edumind}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-edumind-secret}
+      HOST: 0.0.0.0
+      PORT: 5105
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+    volumes:
+      - ./storage:/app/storage
+      - ./models:/app/models
+    depends_on:
+      identity:
+        condition: service_healthy
+      ai-core:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5105/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  generation-worker:
+    image: edumind-backend:latest
+    container_name: edumind-generation-worker
+    env_file:
+      - .env
+    environment:
+      BACKEND_ROLE: worker
+      IDENTITY_URL: http://identity:5101
+      AI_CORE_URL: http://ai-core:5106
+      AUTH_VALIDATION_MODE: remote
+      LLM_EXECUTION_MODE: remote
+      KV_STORE_PROVIDER: ${KV_STORE_PROVIDER:-postgres}
+      POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://edumind:edumind@postgres:5432/edumind}"
+      OBJECT_STORE_PROVIDER: ${OBJECT_STORE_PROVIDER:-s3}
+      OBJECT_STORE_BASE_URL: ${OBJECT_STORE_BASE_URL:-http://localhost:9000/edumind}
+      EVENT_BUS_PROVIDER: ${EVENT_BUS_PROVIDER:-redis}
+      TASK_LEASE_PROVIDER: ${TASK_LEASE_PROVIDER:-redis}
+      TASK_LEASE_TTL_SECONDS: ${TASK_LEASE_TTL_SECONDS:-1800}
+      TASK_QUEUE_PROVIDER: ${TASK_QUEUE_PROVIDER:-redis}
+      TASK_QUEUE_NAME: ${TASK_QUEUE_NAME:-edumind:tasks}
+      TASK_WORKER_POLL_SECONDS: ${TASK_WORKER_POLL_SECONDS:-2}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-edumind}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-edumind}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-edumind-secret}
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+    volumes:
+      - ./storage:/app/storage
+      - ./models:/app/models
+    depends_on:
+      redis:
+        condition: service_healthy
+      identity:
+        condition: service_healthy
+      ai-core:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: edumind-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-edumind}
+      POSTGRES_USER: ${POSTGRES_USER:-edumind}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-edumind}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: edumind-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    container_name: edumind-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-edumind}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-edumind-secret}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-01-17T23-25-50Z
+    container_name: edumind-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-edumind}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-edumind-secret}
+      S3_BUCKET: ${S3_BUCKET:-edumind}
+    entrypoint: >
+      /bin/sh -c "mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
+      mc mb -p local/$$S3_BUCKET || true &&
+      mc anonymous set download local/$$S3_BUCKET || true"
+
   frontend:
     build:
       context: .
-      dockerfile: PageLM-main/Dockerfile.frontend
+      dockerfile: deploy/docker/Dockerfile.frontend
       args:
+        NODE_IMAGE: ${DOCKER_NODE_IMAGE:-docker.1ms.run/library/node:20-alpine}
+        NGINX_IMAGE: ${DOCKER_NGINX_IMAGE:-dockerproxy.net/library/nginx:1.27-alpine}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
         VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:5000}
         VITE_TIMEOUT: ${VITE_TIMEOUT:-90000}
-    image: pagelm-frontend:latest
-    container_name: pagelm-frontend
+    image: edumind-frontend:latest
+    container_name: edumind-frontend
     depends_on:
-      backend:
+      api-gateway:
         condition: service_healthy
     ports:
       - "80:80"
     restart: unless-stopped
+
+volumes:
+  postgres-data:
+  minio-data:

@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+
+message_file="$1"
+subject="$(sed -n '1p' "$message_file")"
+
+case "$subject" in
+  feat:\ *|fix:\ *|docs:\ *|style:\ *|refactor:\ *|test:\ *|chore:\ *|ci:\ *|build:\ *|perf:\ *|revert:\ *)
+    ;;
+  Merge\ *|Revert\ *)
+    ;;
+  *)
+    echo "[commit-msg] Use Conventional Commit format, for example:"
+    echo "  feat: add lesson plan export"
+    echo "  fix: handle empty paper topic"
+    echo "Allowed types: feat, fix, docs, style, refactor, test, chore, ci, build, perf, revert."
+    exit 1
+    ;;
+esac
+
+if [ "${#subject}" -gt 120 ]; then
+  echo "[commit-msg] First line is too long (${#subject}/120)."
+  exit 1
+fi

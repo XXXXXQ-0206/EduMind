@@ -1,0 +1,73 @@
+#!/bin/sh
+set -eu
+
+echo "[pre-commit] Checking staged files..."
+
+staged_files="$(git diff --cached --name-only --diff-filter=ACMR)"
+staged_paths="$(git diff --cached --name-only)"
+
+if [ -z "$staged_files" ]; then
+  exit 0
+fi
+
+blocked_pattern='(^|/)(node_modules|\.venv|venv|dist|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|storage|models|logs|screenshots)(/|$)|(^|/)\.env($|\.)|(^|/)\.DS_Store$|(^|/)(\.idea|\.cursor|\.codex|\.shared|\.claude|\.agents)(/|$)|(^|/)\.github/prompts(/|$)'
+
+blocked_files="$(printf '%s\n' "$staged_files" | grep -E "$blocked_pattern" | grep -Ev '(^|/)\.env(\..*)?\.example$|(^|/)\.env\.example$' || true)"
+if [ -n "$blocked_files" ]; then
+  echo "[pre-commit] Refusing to commit generated, local, or secret files:"
+  printf '%s\n' "$blocked_files"
+  echo "Move runtime data out of Git or update .gitignore deliberately."
+  exit 1
+fi
+
+large_files=""
+for file in $staged_files; do
+  if [ -f "$file" ]; then
+    size="$(wc -c < "$file" | tr -d ' ')"
+    case "$file" in
+      *.avif|*.gif|*.ico|*.jpeg|*.jpg|*.mp3|*.mp4|*.otf|*.pdf|*.png|*.ttf|*.wav|*.webm|*.webp|*.woff|*.woff2)
+        if [ "$size" -gt 1048576 ]; then
+          if ! git check-attr filter -- "$file" | grep -q 'filter: lfs'; then
+            large_files="${large_files}
+$file"
+          fi
+        fi
+        ;;
+      *)
+        if [ "$size" -gt 5242880 ]; then
+          large_files="${large_files}
+$file"
+        fi
+        ;;
+    esac
+  fi
+done
+
+if [ -n "$large_files" ]; then
+  echo "[pre-commit] Large files must use Git LFS or stay outside the repository:"
+  printf '%s\n' "$large_files"
+  exit 1
+fi
+
+if command -v python >/dev/null 2>&1; then
+  echo "[pre-commit] Running Python compile check..."
+  python -m compileall -q backend scripts tests
+else
+  echo "[pre-commit] Python not found; skipping compile check."
+fi
+
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  echo "[pre-commit] Validating docker-compose.yml..."
+  docker compose config --quiet
+else
+  echo "[pre-commit] Docker Compose not found; skipping compose validation."
+fi
+
+if command -v npm >/dev/null 2>&1 && [ -d "frontend/node_modules" ]; then
+  echo "[pre-commit] Running frontend lint..."
+  (cd frontend && npm run lint -- --max-warnings=0)
+else
+  echo "[pre-commit] frontend/node_modules not found; skipping frontend lint."
+fi
+
+echo "[pre-commit] OK"

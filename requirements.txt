@@ -1,0 +1,71 @@
+# FastAPI 核心
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12
+websockets==13.1
+pydantic==2.10.0
+pydantic-settings==2.6.0
+
+# LangChain / LangGraph
+langchain==0.3.10
+langchain-community==0.3.10
+langchain-openai==0.2.14
+langchain-anthropic==0.3.0
+langchain-google-genai==2.0.7
+langchain-ollama==0.2.1
+langgraph==0.2.59
+
+# 文档解析
+PyMuPDF==1.24.12
+pymongo==4.10.1
+python-docx==1.1.2
+mammoth==1.8.0
+markdownify==0.13.1
+unstructured==0.16.0
+pillow==11.0.0
+
+# 音频处理
+pydub==0.25.1
+edge-tts==6.1.12
+gTTS==2.5.4
+google-cloud-texttospeech==2.17.2
+elevenlabs==1.9.0
+
+# FFmpeg 集成
+ffmpeg-python==0.2.0
+
+# PDF 生成
+reportlab==4.2.5
+pypdf==5.1.0
+
+# 数据存储
+numpy==1.26.4
+# keyv==0.3.0 (暂时注释，pip 无法安装)
+python-dotenv==1.0.1
+
+# HTTP 客户端
+httpx==0.28.1
+aiofiles==24.1.0
+redis==5.2.1
+boto3==1.35.82
+psycopg[binary]==3.2.3
+
+# 向量存储
+faiss-cpu==1.8.0.post1
+chromadb==0.6.3
+
+# PPT 生成
+python-pptx==1.0.2
+
+# 即梦/火山引擎 图像生成（可选，不装则幻灯片无配图）
+volcengine-python-sdk>=1.0.0
+
+# 实用工具
+python-dateutil==2.9.0.post0
+tiktoken==0.8.0
+
+# 开发工具
+pytest==8.3.4
+pytest-asyncio==0.24.0
+black==24.10.0
+ruff==0.8.4
