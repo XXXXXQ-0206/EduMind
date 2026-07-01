@@ -18,6 +18,7 @@ from infrastructure.task_lease import KeyValueTaskLeaseProvider  # noqa: E402
 from scripts.migrate_storage_to_adapters import (  # noqa: E402
     iter_legacy_kv_files,
     iter_legacy_object_files,
+    iter_legacy_vector_files,
     restore_legacy_kv_key,
     run_migration,
 )
@@ -30,6 +31,8 @@ from utils.live_events import (  # noqa: E402
     stream_live_events_sse,
 )
 from utils.storage import JSONStorage  # noqa: E402
+from utils.storage import VectorStore  # noqa: E402
+from utils.auth_db import AuthDatabase  # noqa: E402
 from utils.upload_objects import upload_object_key_from_meta  # noqa: E402
 
 
@@ -199,6 +202,94 @@ def test_create_kv_store_supports_postgres_provider(monkeypatch):
     assert isinstance(kv_module.create_kv_store(), FakePostgresStore)
 
 
+class FakeSyncConnectionContext:
+    def __init__(self, executed):
+        self.executed = executed
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def execute(self, sql, params=()):
+        self.executed.append((sql, params))
+        return self
+
+
+def test_auth_database_uses_postgres_tables_and_jsonb():
+    executed = []
+    database = AuthDatabase(
+        dsn="postgresql://unit-test",
+        table_prefix="unit_auth",
+        connection_factory=lambda: FakeSyncConnectionContext(executed),
+    )
+
+    database._ensure_schema()
+
+    sql_statements = "\n".join(statement for statement, _params in executed)
+    assert "CREATE TABLE IF NOT EXISTS unit_auth_users" in sql_statements
+    assert "CREATE TABLE IF NOT EXISTS unit_auth_chats" in sql_statements
+    assert "material_ids jsonb NOT NULL" in sql_statements
+    assert "REFERENCES unit_auth_users(id) ON DELETE CASCADE" in sql_statements
+
+
+class FakeVectorTransaction:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+
+class FakeVectorConnection:
+    def __init__(self, executed):
+        self.executed = executed
+        self.commits = 0
+
+    async def execute(self, sql, params=()):
+        self.executed.append((sql, params))
+        return FakePostgresCursor()
+
+    async def commit(self):
+        self.commits += 1
+
+    def transaction(self):
+        return FakeVectorTransaction()
+
+
+class FakeVectorConnectionContext:
+    def __init__(self, executed):
+        self.connection = FakeVectorConnection(executed)
+
+    async def __aenter__(self):
+        return self.connection
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+
+def test_vector_store_initializes_pgvector_schema():
+    async def run():
+        executed = []
+        store = VectorStore(
+            "unit",
+            dsn="postgresql://unit-test",
+            table_name="unit_vectors",
+            connection_factory=lambda: FakeVectorConnectionContext(executed),
+        )
+
+        await store._ensure_schema()
+
+        sql_statements = "\n".join(statement for statement, _params in executed)
+        assert "CREATE EXTENSION IF NOT EXISTS vector" in sql_statements
+        assert "CREATE TABLE IF NOT EXISTS unit_vectors" in sql_statements
+        assert "embedding vector NOT NULL" in sql_statements
+        assert store._vector_literal([0.1, 2, -3.5]) == "[0.1,2,-3.5]"
+
+    asyncio.run(run())
+
+
 def test_json_storage_update_returns_updated_value(tmp_path):
     async def run():
         storage = JSONStorage(base_dir=tmp_path)
@@ -287,6 +378,7 @@ def test_local_object_store_writes_urls_and_deletes(tmp_path):
 def test_upload_metadata_prefers_object_key_for_text_extraction(tmp_path, monkeypatch):
     async def run():
         monkeypatch.setattr(config, "storage_dir", tmp_path)
+        monkeypatch.setattr(config, "object_store_provider", "local")
         upload_path = tmp_path / "uploads" / "planner-note.txt"
         upload_path.parent.mkdir(parents=True, exist_ok=True)
         upload_path.write_text("source", encoding="utf-8")
@@ -307,6 +399,7 @@ def test_upload_metadata_prefers_object_key_for_text_extraction(tmp_path, monkey
 def test_selected_files_context_uses_object_keys(tmp_path, monkeypatch):
     async def run():
         monkeypatch.setattr(config, "storage_dir", tmp_path)
+        monkeypatch.setattr(config, "object_store_provider", "local")
         upload_path = tmp_path / "uploads" / "lesson.txt"
         upload_path.parent.mkdir(parents=True, exist_ok=True)
         upload_path.write_text("source", encoding="utf-8")
@@ -597,6 +690,10 @@ def test_storage_migration_restores_legacy_kv_keys():
 
 def test_storage_migration_scans_kv_and_object_files(tmp_path):
     (tmp_path / "note_abc_payload.json").write_text('{"topic":"math"}', encoding="utf-8")
+    (tmp_path / "vectors_lesson.json").write_text(
+        '{"texts":["algebra"],"vectors":[[0.1,0.2]],"metadatas":[{"source":"unit"}]}',
+        encoding="utf-8",
+    )
     (tmp_path / "edumind.sqlite3").write_bytes(b"sqlite")
     upload = tmp_path / "uploads" / "lesson.txt"
     upload.parent.mkdir(parents=True)
@@ -606,15 +703,21 @@ def test_storage_migration_scans_kv_and_object_files(tmp_path):
     cache_file.write_bytes(b"cache")
 
     kv_items = list(iter_legacy_kv_files(tmp_path))
+    vector_items = list(iter_legacy_vector_files(tmp_path))
     object_items = list(iter_legacy_object_files(tmp_path))
 
     assert kv_items == [("note:abc:payload", tmp_path / "note_abc_payload.json")]
+    assert vector_items == [("lesson", tmp_path / "vectors_lesson.json")]
     assert object_items == [("uploads/lesson.txt", upload)]
 
 
 def test_storage_migration_dry_run_does_not_write(tmp_path):
     async def run():
         (tmp_path / "quiz_q1_topic.json").write_text('"algebra"', encoding="utf-8")
+        (tmp_path / "vectors_lesson.json").write_text(
+            '{"texts":["algebra"],"vectors":[[0.1,0.2]],"metadatas":[{"source":"unit"}]}',
+            encoding="utf-8",
+        )
         upload = tmp_path / "uploads" / "source.txt"
         upload.parent.mkdir(parents=True)
         upload.write_text("source", encoding="utf-8")
@@ -625,6 +728,9 @@ def test_storage_migration_dry_run_does_not_write(tmp_path):
         assert report.kv_scanned == 1
         assert report.kv_written == 0
         assert report.kv_skipped == 1
+        assert report.vectors_scanned == 1
+        assert report.vectors_written == 0
+        assert report.vectors_skipped == 1
         assert report.objects_scanned == 1
         assert report.objects_written == 0
         assert report.objects_skipped == 1

@@ -52,8 +52,7 @@ boto3==1.35.82
 psycopg[binary]==3.2.3
 
 # 向量存储
-faiss-cpu==1.8.0.post1
-chromadb==0.6.3
+# pgvector is provided by PostgreSQL; Python access uses psycopg above.
 
 # PPT 生成
 python-pptx==1.0.2

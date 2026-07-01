@@ -20,12 +20,14 @@ class Settings(BaseSettings):
     timeout: int = Field(default=90000, alias="VITE_TIMEOUT")
 
     # 数据库配置
-    db_mode: str = Field(default="json", alias="db_mode")
-    kv_store_provider: str = Field(default="json", alias="KV_STORE_PROVIDER")
+    db_mode: str = Field(default="postgres", alias="db_mode")
+    kv_store_provider: str = Field(default="postgres", alias="KV_STORE_PROVIDER")
     postgres_dsn: str = Field(
         default="postgresql://edumind:edumind@postgres:5432/edumind",
         alias="POSTGRES_DSN",
     )
+    vector_store_provider: str = Field(default="pgvector", alias="VECTOR_STORE_PROVIDER")
+    pgvector_table: str = Field(default="edumind_vectors", alias="PGVECTOR_TABLE")
     object_store_provider: str = Field(default="local", alias="OBJECT_STORE_PROVIDER")
     object_store_base_url: str = Field(default="/storage", alias="OBJECT_STORE_BASE_URL")
     event_bus_provider: str = Field(default="memory", alias="EVENT_BUS_PROVIDER")

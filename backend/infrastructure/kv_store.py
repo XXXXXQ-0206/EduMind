@@ -1,8 +1,8 @@
 """Key-value storage adapters.
 
-The default adapter preserves the current JSON-file behavior. The interface is
-small on purpose so route code can later move to Redis, PostgreSQL JSONB, or a
-dedicated state service without changing every caller.
+PostgreSQL JSONB is the default runtime adapter. JSON-file storage remains as a
+legacy/local adapter and as an explicit test fixture when a base directory is
+provided.
 """
 from __future__ import annotations
 
@@ -397,7 +397,10 @@ def validate_sql_identifier(identifier: str) -> str:
 
 
 def create_kv_store(base_dir: Optional[Path] = None) -> KeyValueStore:
-    provider = (config.kv_store_provider or "json").strip().lower()
+    if base_dir is not None:
+        return JsonFileKeyValueStore(base_dir=base_dir)
+
+    provider = (config.kv_store_provider or "postgres").strip().lower()
     if provider == "json":
         return JsonFileKeyValueStore(base_dir=base_dir)
     if provider == "redis":

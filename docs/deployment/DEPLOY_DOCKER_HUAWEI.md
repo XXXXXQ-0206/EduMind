@@ -104,6 +104,8 @@ Compose 默认会注入微服务基础设施配置：
 
 ```bash
 KV_STORE_PROVIDER=postgres
+VECTOR_STORE_PROVIDER=pgvector
+PGVECTOR_TABLE=edumind_vectors
 OBJECT_STORE_PROVIDER=s3
 EVENT_BUS_PROVIDER=redis
 TASK_QUEUE_PROVIDER=celery
