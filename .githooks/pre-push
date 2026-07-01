@@ -8,14 +8,18 @@ else
   exit 2
 fi
 
-protected_branch="$(git branch --show-current)"
-if [ "$protected_branch" = "main" ] || [ "$protected_branch" = "master" ]; then
-  if git ls-remote --exit-code --heads origin "$protected_branch" >/dev/null 2>&1; then
-    echo "[pre-push] Direct pushes to $protected_branch are blocked locally."
-    echo "Push feature branches and merge by Pull Request."
-    echo "Repository maintainers may use --no-verify only for the first bootstrap push."
-    exit 1
-  fi
-fi
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      protected_branch="${remote_ref#refs/heads/}"
+      if [ "$remote_sha" != "0000000000000000000000000000000000000000" ]; then
+        echo "[pre-push] Direct pushes to $protected_branch are blocked locally."
+        echo "Push feature branches and merge by Pull Request."
+        echo "Repository maintainers may use --no-verify only for exceptional maintenance."
+        exit 1
+      fi
+      ;;
+  esac
+done
 
 echo "[pre-push] OK"
