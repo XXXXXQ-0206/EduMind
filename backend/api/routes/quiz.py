@@ -127,6 +127,7 @@ async def create_quiz(request: QuizRequest, user: AuthUser = Depends(require_aut
                 "ok": True,
                 "quizId": quiz_id,
                 "stream": f"/ws/quiz?quizId={quiz_id}",
+                "events": f"/tasks/quiz/{quiz_id}/events",
             }
         )
 

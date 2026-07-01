@@ -221,6 +221,7 @@ async def create_paper(request: PaperRequest, user: AuthUser = Depends(require_a
                 "ok": True,
                 "paperId": paper_id,
                 "stream": f"/ws/paper?paperId={paper_id}",
+                "events": f"/tasks/paper/{paper_id}/events",
             },
         )
     except Exception as e:

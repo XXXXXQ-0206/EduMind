@@ -206,6 +206,7 @@ async def start_exam(payload: StartExamRequest, user: AuthUser = Depends(require
         "ok": True,
         "runId": run_id,
         "stream": f"/ws/exams?runId={run_id}",
+        "events": f"/tasks/exam/{run_id}/events",
     }
 
 
