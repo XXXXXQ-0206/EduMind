@@ -3,7 +3,7 @@ import { forceSimulation, forceManyBody, forceCollide, forceRadial, type Simulat
 export type Node = { id: string; x: number; y: number; vx?: number; vy?: number; fx?: number | null; fy?: number | null; type: 'center' | 'step'; taskId?: string; label?: string }
 
 export type TaskSim = {
-    sim: Simulation<any, any>
+    sim: Simulation<Node, undefined>
     nodes: Node[]
     center: Node
 }
@@ -23,7 +23,7 @@ export function buildTaskSim(taskId: string, cx: number, cy: number, steps: Arra
         for (const n of nodes) if (n.type === 'step' && n.taskId && typeof n.x === 'number' && typeof n.y === 'number') out[`${n.taskId}::${n.label}`] = { x: n.x - 42, y: n.y - 14 }
         if (Object.keys(out).length) onTick(out)
     })
-    return { sim: sim as any, nodes, center }
+    return { sim, nodes, center }
 }
 
 export function recenterTaskSim(ts: TaskSim, cx: number, cy: number) {
@@ -45,5 +45,5 @@ export function releaseStep(ts: TaskSim, key: string) {
 }
 
 export function stopAll(map: Record<string, TaskSim>) {
-    for (const k of Object.keys(map)) try { map[k].sim.stop() } catch { }
+    for (const k of Object.keys(map)) try { map[k].sim.stop() } catch { /* already stopped */ }
 }

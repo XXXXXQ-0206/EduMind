@@ -185,6 +185,7 @@ export type ExamEvent =
   | { type: "exam"; examId: string; payload: Question[] }
   | { type: "done" }
   | { type: "error"; examId?: string; error: string };
+export type ExamMeta = { id: string; name: string; sections: unknown[] };
 export type PodcastEvent =
   | { type: "ready"; pid: string }
   | { type: "phase"; value: string }
@@ -353,7 +354,8 @@ async function req<T = unknown>(
   }
 }
 
-const jsonHeaders = (_?: unknown) => {
+const jsonHeaders = (body?: unknown) => {
+  void body;
   const h = new Headers();
   h.set("content-type", "application/json");
   const token = getAuthToken();
@@ -478,12 +480,14 @@ export function connectChatStream(chatId: string, onEvent: (ev: ChatEvent) => vo
     try {
       const data = JSON.parse(m.data as string) as ChatEvent;
       onEvent(data);
-    } catch { }
+    } catch {
+      // Ignore malformed stream messages.
+    }
   };
   ws.onerror = () => {
     onEvent({ type: "error", error: "stream_error" });
   };
-  return { ws, close: () => { try { ws.close(); } catch { } } };
+  return { ws, close: () => { try { ws.close(); } catch { /* already closed */ } } };
 }
 
 export async function chatAskOnce(opts: {
@@ -618,7 +622,7 @@ export async function deleteKnowledgeDeck(id: string) {
 }
 
 export async function getExams() {
-  return req<{ ok: true; exams: { id: string; name: string; sections: any[] }[] }>(
+  return req<{ ok: true; exams: ExamMeta[] }>(
     `${env.backend}/exams`,
     { method: "GET" }
   )
@@ -641,10 +645,12 @@ export function connectExamStream(runId: string, onEvent: (ev: ExamEvent) => voi
   ws.onmessage = (m) => {
     try {
       onEvent(JSON.parse(m.data as string) as ExamEvent)
-    } catch { }
+    } catch {
+      // Ignore malformed stream messages.
+    }
   }
   ws.onerror = () => onEvent({ type: "error", error: "stream_error" })
-  return { ws, close: () => { try { ws.close() } catch { } } }
+  return { ws, close: () => { try { ws.close() } catch { /* already closed */ } } }
 }
 
 export async function smartnotesStart(input: {
