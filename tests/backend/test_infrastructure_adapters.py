@@ -567,7 +567,11 @@ def test_sse_stream_yields_published_events():
         bus = InMemoryEventBus()
         stream = stream_live_events_sse("task:one", heartbeat_seconds=10, bus=bus)
         first = asyncio.create_task(anext(stream))
-        await asyncio.sleep(0)
+        for _ in range(10):
+            if bus._subscribers["task:one"]:
+                break
+            await asyncio.sleep(0)
+        assert bus._subscribers["task:one"]
 
         await bus.publish("task:one", {"type": "phase", "value": "generating"})
 

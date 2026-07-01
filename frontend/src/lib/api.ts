@@ -406,7 +406,11 @@ export function connectTaskEvents<T extends { type?: string; error?: string }>(
   return {
     source,
     close: () => {
-      try { source.close(); } catch { }
+      try {
+        source.close();
+      } catch {
+        // EventSource may already be closed.
+      }
     },
   };
 }
