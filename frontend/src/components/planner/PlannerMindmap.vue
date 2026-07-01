@@ -207,9 +207,20 @@ type DragState = { id: string; off: Pt } | null;
 
 type Step = { label: string; w: number };
 
-type NodeMap = Record<string, any>;
+type MindmapNode = {
+  id: string;
+  x: number;
+  y: number;
+  fx?: number | null;
+  fy?: number | null;
+  type: "center" | "step";
+  taskId?: string;
+  label?: string;
+};
 
-type SimMap = Record<string, Simulation<any, any>>;
+type NodeMap = Record<string, MindmapNode>;
+
+type SimMap = Record<string, Simulation<MindmapNode>>;
 
 type StepPos = Record<string, Pt>;
 
@@ -406,8 +417,8 @@ const buildSims = () => {
     const cx = base.x + w / 2;
     const cy = base.y + h / 2;
     const cid = `t:${t.id}`;
-    const center = { id: cid, x: cx, y: cy, fx: cx, fy: cy, type: "center" };
-    const nodes: any[] = [center];
+    const center: MindmapNode = { id: cid, x: cx, y: cy, fx: cx, fy: cy, type: "center" };
+    const nodes: MindmapNode[] = [center];
     nm[cid] = center;
     const labels = labelsForTask(t);
     for (const label of labels) {
@@ -416,7 +427,7 @@ const buildSims = () => {
       const sx = (sp?.x ?? cx + 120) + 42;
       const sy = (sp?.y ?? cy) + 14;
       const nid = `s:${sid}`;
-      const sn = { id: nid, x: sx, y: sy, type: "step", taskId: t.id, label };
+      const sn: MindmapNode = { id: nid, x: sx, y: sy, type: "step", taskId: t.id, label };
       nodes.push(sn);
       nm[nid] = sn;
     }

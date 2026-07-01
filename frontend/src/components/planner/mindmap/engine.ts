@@ -3,7 +3,7 @@ import { forceSimulation, forceManyBody, forceCollide, forceRadial, type Simulat
 export type Node = { id: string; x: number; y: number; vx?: number; vy?: number; fx?: number | null; fy?: number | null; type: 'center' | 'step'; taskId?: string; label?: string }
 
 export type TaskSim = {
-    sim: Simulation<Node, undefined>
+    sim: Simulation<Node>
     nodes: Node[]
     center: Node
 }
