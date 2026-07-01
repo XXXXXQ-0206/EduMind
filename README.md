@@ -268,6 +268,7 @@ npm run build
 ## 相关文档
 
 - [knowledge.md](knowledge.md)：架构、模块、关键实现与面试追问。
+- [CELERY_REDIS_TASKS_README.md](CELERY_REDIS_TASKS_README.md)：Celery + Redis 长任务、WebSocket/SSE 进度通道说明。
 - [backend-service-boundaries.md](docs/architecture/backend-service-boundaries.md)：后端服务边界和当前运行说明。
 - [ENVIRONMENT_SETUP_FOR_AGENTS.md](docs/deployment/ENVIRONMENT_SETUP_FOR_AGENTS.md)：新机器环境配置说明。
 - [DEPLOY_DOCKER_HUAWEI.md](docs/deployment/DEPLOY_DOCKER_HUAWEI.md)：Docker 部署参考。
