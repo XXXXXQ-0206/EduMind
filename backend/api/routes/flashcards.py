@@ -133,11 +133,19 @@ async def delete_flashcard(card_id: str, user: AuthUser = Depends(require_auth))
         return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
 
 
-async def _build_material_context(ids: List[str], user: AuthUser) -> str:
+async def _build_material_context(ids: List[str], user: AuthUser, query: str) -> str:
     if not ids:
         return ""
     files = await list_files_for_user(user.id, user.username, "student")
-    return await build_selected_files_context(files, ids, max_chars=20000, snippet_chars=20000)
+    return await build_selected_files_context(
+        files,
+        ids,
+        max_chars=20000,
+        snippet_chars=20000,
+        query=query,
+        owner_id=user.id,
+        role="student",
+    )
 
 
 @router.post("/flashcards/decks")
@@ -156,7 +164,7 @@ async def generate_knowledge_cards(request: KnowledgeCardsRequest, user: AuthUse
         prompt_topic = topic
 
         if include_materials and material_ids:
-            materials_text = await _build_material_context(material_ids, user)
+            materials_text = await _build_material_context(material_ids, user, topic)
             if materials_text:
                 prompt_topic = (
                     f"{topic}\n\n学习资料内容:\n{materials_text}\n\n"

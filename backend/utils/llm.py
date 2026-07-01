@@ -2,29 +2,30 @@
 LLM 模型管理模块
 支持多个 LLM 提供商：Gemini, OpenAI, Claude, Grok, Ollama, OpenRouter, DeepSeek
 """
+from __future__ import annotations
+
 import os
 from threading import Lock
 from typing import Optional, List, Dict, Any
-from langchain_core.language_models import BaseChatModel
-from langchain_core.embeddings import Embeddings
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_anthropic import ChatAnthropic
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_ollama import ChatOllama, OllamaEmbeddings
 from config import config
 
 
 _default_llm_lock = Lock()
 _default_embeddings_lock = Lock()
-_default_llm: Optional[BaseChatModel] = None
-_default_embeddings: Optional[Embeddings] = None
+_default_llm: Optional[Any] = None
+_default_embeddings: Optional[Any] = None
 
 
 def make_llm(
     max_tokens: Optional[int] = None,
     provider: Optional[str] = None,
-) -> BaseChatModel:
+) -> Any:
     """根据配置创建 LLM 实例。可选 max_tokens、provider（指定则覆盖全局 LLM_PROVIDER）。"""
+    from langchain_anthropic import ChatAnthropic
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from langchain_ollama import ChatOllama
+    from langchain_openai import ChatOpenAI
+
     use_provider = (provider or config.llm_provider).lower()
     maxtok = max_tokens if max_tokens is not None else config.llm_maxtok
 
@@ -106,8 +107,12 @@ def make_llm(
         raise ValueError(f"Unknown LLM provider: {use_provider}")
 
 
-def make_embeddings() -> Embeddings:
+def make_embeddings() -> Any:
     """根据配置创建 Embeddings 实例"""
+    from langchain_google_genai import GoogleGenerativeAIEmbeddings
+    from langchain_ollama import OllamaEmbeddings
+    from langchain_openai import OpenAIEmbeddings
+
     provider = config.emb_provider.lower()
 
     if provider == "openai":
@@ -145,7 +150,7 @@ def make_embeddings() -> Embeddings:
             from sentence_transformers import SentenceTransformer
             import torch
 
-            class LocalEmbeddings(Embeddings):
+            class LocalEmbeddings:
                 """本地嵌入模型包装器"""
 
                 def __init__(self, model_name: str = None, model_path: str = None):
@@ -176,7 +181,7 @@ def make_embeddings() -> Embeddings:
                 from transformers import AutoTokenizer, AutoModel
                 import torch
 
-                class TransformersEmbeddings(Embeddings):
+                class TransformersEmbeddings:
                     """Transformers 本地嵌入模型"""
 
                     def __init__(self, model_name: str):
@@ -195,14 +200,14 @@ def make_embeddings() -> Embeddings:
                             embeddings.append(embedding.tolist())
                         return embeddings
 
-                    def embed_query(self, text: str) -> List[List[float]]:
+                    def embed_query(self, text: str) -> List[float]:
                         inputs = self.tokenizer(
                             text, return_tensors="pt", padding=True, truncation=True
                         )
                         with torch.no_grad():
                             outputs = self.model(**inputs)
                         embedding = outputs.last_hidden_state.mean(dim=1).squeeze()
-                        return [embedding.tolist()]
+                        return embedding.tolist()
 
                 return TransformersEmbeddings(config.local_embed_model)
             except ImportError:
@@ -218,7 +223,7 @@ def make_embeddings() -> Embeddings:
 def get_llm(
     max_tokens: Optional[int] = None,
     provider: Optional[str] = None,
-) -> BaseChatModel:
+) -> Any:
     """
     获取 LLM 实例。
 
@@ -236,7 +241,7 @@ def get_llm(
     return _default_llm
 
 
-def get_embeddings() -> Embeddings:
+def get_embeddings() -> Any:
     """
     获取 Embeddings 实例。
 

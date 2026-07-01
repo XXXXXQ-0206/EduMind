@@ -260,11 +260,19 @@ async def _read_sidecar_text(file_path: str) -> str:
         return ""
 
 
-async def _build_material_context(ids: List[str], owner_id: int, owner_username: str, role: str) -> str:
+async def _build_material_context(ids: List[str], owner_id: int, owner_username: str, role: str, query: str) -> str:
     if not ids:
         return ""
     files = await list_files_for_user(owner_id, owner_username, role)
-    return await build_selected_files_context(files, ids, max_chars=8000, snippet_chars=8000)
+    return await build_selected_files_context(
+        files,
+        ids,
+        max_chars=8000,
+        snippet_chars=4000,
+        query=query,
+        owner_id=owner_id,
+        role=role,
+    )
 
 
 async def _send_teaching_video_snapshot(video_id: str) -> tuple[bool, bool]:
@@ -355,7 +363,7 @@ async def _run_teaching_video_generation(video_id: str) -> None:
 
     materials_context = ""
     if use_materials and material_ids:
-        materials_context = await _build_material_context(material_ids, owner_id, owner_username, scope)
+        materials_context = await _build_material_context(material_ids, owner_id, owner_username, scope, topic)
 
     agent = TeachingVideoAgent()
     result = await agent.execute(TeachingVideoInput(topic=topic, materials_context=materials_context or None))

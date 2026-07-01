@@ -121,10 +121,31 @@ async def build_files_context(
     *,
     max_chars: int = 12000,
     snippet_chars: int = 2500,
+    query: str = "",
+    owner_id: Optional[int] = None,
+    role: Optional[str] = None,
 ) -> str:
+    file_list = [dict(item) for item in files if isinstance(item, dict)]
+    try:
+        from services.document_library import build_rag_context_for_user_files
+
+        context = await build_rag_context_for_user_files(
+            file_list,
+            [],
+            owner_id=owner_id,
+            role=role,
+            query=query,
+            max_chars=max_chars,
+            per_file_k=2,
+        )
+        if context.text:
+            return context.text
+    except Exception:
+        pass
+
     parts: List[str] = []
     used = 0
-    for meta in files:
+    for meta in file_list:
         remaining = max_chars - used
         if remaining <= 0:
             break
@@ -145,12 +166,22 @@ async def build_selected_files_context(
     *,
     max_chars: int = 12000,
     snippet_chars: int = 2500,
+    query: str = "",
+    owner_id: Optional[int] = None,
+    role: Optional[str] = None,
 ) -> str:
     file_list = [dict(item) for item in files if isinstance(item, dict)]
     file_map = {str(item.get("id")): item for item in file_list if item.get("id")}
     selected_ids = [str(item) for item in ids if item]
     selected = [file_map[item] for item in selected_ids if item in file_map] if selected_ids else file_list
-    return await build_files_context(selected, max_chars=max_chars, snippet_chars=snippet_chars)
+    return await build_files_context(
+        selected,
+        max_chars=max_chars,
+        snippet_chars=snippet_chars,
+        query=query,
+        owner_id=owner_id,
+        role=role,
+    )
 
 
 def ensure_string_list(value: Any, *, limit: int = 8, item_limit: int = 200) -> List[str]:

@@ -17,7 +17,7 @@ from infrastructure.object_store import create_object_store
 from infrastructure.task_lease import acquire_task_lease, release_task_lease
 from utils.auth import require_auth, require_websocket_auth
 from utils.auth_contracts import AuthUser
-from utils.feature_support import extract_file_text_from_meta
+from utils.feature_support import build_selected_files_context
 from utils.live_events import forward_live_events, publish_live_event
 from utils.storage import derive_note_status, json_storage, list_files_for_user, list_notes, owner_payload, record_belongs_to_user
 
@@ -80,7 +80,7 @@ async def _note_still_exists(note_id: str) -> bool:
     return isinstance(await json_storage.get(f"note:{note_id}"), dict)
 
 
-async def _build_note_material_context(note_id: str, ids: List[str]) -> str:
+async def _build_note_material_context(note_id: str, ids: List[str], query: str) -> str:
     if not ids:
         return ""
 
@@ -88,21 +88,15 @@ async def _build_note_material_context(note_id: str, ids: List[str]) -> str:
     owner_id = int(meta.get("owner_id") or 0)
     owner_username = str(meta.get("owner_username") or "")
     files = await list_files_for_user(owner_id, owner_username, "student")
-    file_map = {f.get("id"): f for f in files if f.get("id")}
-    parts: List[str] = []
-
-    for fid in ids:
-        file_meta = file_map.get(fid)
-        if not file_meta:
-            continue
-        text = await extract_file_text_from_meta(file_meta)
-        if not text:
-            continue
-
-        header = f"\n\n[资料] {file_meta.get('originalName') or file_meta.get('filename') or 'document'}\n"
-        parts.append(header + text)
-
-    return "".join(parts).strip()
+    return await build_selected_files_context(
+        files,
+        ids,
+        max_chars=12000,
+        snippet_chars=4000,
+        query=query,
+        owner_id=owner_id,
+        role="student",
+    )
 
 
 def _is_note_task_running(note_id: str) -> bool:
@@ -166,7 +160,8 @@ async def _run_note_generation(note_id: str) -> None:
     topic = data.get("topic")
 
     if include_materials and material_ids:
-        materials_text = await _build_note_material_context(note_id, material_ids)
+        materials_query = str(topic or data.get("notes") or "智能笔记")
+        materials_text = await _build_note_material_context(note_id, material_ids, materials_query)
         if materials_text:
             topic = (
                 f"{topic or ''}\n\n学习资料内容:\n{materials_text}\n\n"

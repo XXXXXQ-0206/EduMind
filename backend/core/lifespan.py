@@ -30,8 +30,7 @@ def should_initialize_auth_db(app: FastAPI) -> bool:
     """Return whether this process owns direct auth database initialization."""
 
     service_name = str(getattr(app.state, "service_name", "") or "")
-    auth_mode = str(os.environ.get("AUTH_VALIDATION_MODE", "local") or "local").strip().lower()
-    return service_name in {"modular-monolith", "identity"} or auth_mode != "remote"
+    return service_name in {"modular-monolith", "identity"}
 
 
 async def startup_bilibili_bridge(app: FastAPI) -> None:

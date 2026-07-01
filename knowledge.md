@@ -188,12 +188,14 @@ AI_CORE_URL=http://ai-core:5106
 - identity 服务使用 PostgreSQL 保存账户和会话；边界服务通过 `AUTH_VALIDATION_MODE=remote` 调 `/auth/internal/resolve`。
 - 业务数据按用户、scope、role 或 owner 字段隔离。新注册账户不会继承默认演示数据。
 
-### 6.2 文件库与资料上下文
+### 6.2 文件库、多文件 RAG 与资料上下文
 
-- 文件上传进入 `asset-library`。
-- 元数据走 KV Store，文件字节走 ObjectStore。
-- 业务模块不再拼接 `storage/uploads` 本地路径，而是通过 object key 和 helper 取文本、取缓存路径或生成 URL。
-- 对话、教案、测验、笔记、试卷等都可以复用选中文件作为上下文。
+- 文件上传进入 `asset-library`，一次上传多个文件时逐个保存对象和元数据。
+- 元数据走 KV Store，文件字节走 ObjectStore，业务模块通过 object key 访问缓存路径或生成 URL。
+- `backend/services/document_library.py` 负责解析 PDF、Office、Markdown、HTML、常见文本文件，随后分段写入 KV，并按 `owner_id + role + file_id` 写入 pgvector namespace。
+- 对话、教案、测验、笔记、试卷、幻灯片、播客、教学视频和知识卡片在 agent 调用前统一执行 RAG 检索。上下文包含多个文件的来源名称、分块编号和相关片段，避免只读取第一个 PDF 或被大文件顺序截断。
+- pgvector 或 embedding 服务不可用时，检索自动回退到关键词排序；分块仍保存在 KV 中，业务生成功能保持可用。
+- 详细设计见 `docs/architecture/multi-file-rag-agent.md`。
 
 ### 6.3 对话、笔记、测验和错题本
 

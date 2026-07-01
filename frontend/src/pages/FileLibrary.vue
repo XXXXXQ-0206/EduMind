@@ -152,6 +152,14 @@
                 <div class="text-sm font-medium text-[color:var(--app-text)] truncate" :title="file.originalName">{{ file.originalName }}</div>
                 <div class="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-[color:var(--nav-text-muted)]">
                   <span class="px-1.5 py-0.5 rounded-md bg-[color:var(--nav-hover-bg-strong)] text-[color:var(--nav-text)]">{{ fileKindLabel(file) }}</span>
+                  <span
+                    v-if="file.ragStatus"
+                    class="px-1.5 py-0.5 rounded-md"
+                    :class="ragStatusClass(file)"
+                    :title="ragStatusTitle(file)"
+                  >
+                    {{ ragStatusLabel(file) }}
+                  </span>
                   <span v-if="isInLearningFolder(file.id)" class="px-1.5 py-0.5 rounded-md bg-[color:var(--nav-hover-bg-strong)] text-[color:var(--nav-text)]">{{ folderBadgeLabel }}</span>
                   <span>{{ formatBytes(file.size) }}</span>
                   <span>{{ formatDate(file.uploadedAt) }}</span>
@@ -376,6 +384,35 @@ const fileKindLabel = (file: LibraryFile) => {
   const kind = fileKind(file);
   const match = typeOptions.find((opt) => opt.key === kind);
   return match ? match.label : "其他";
+};
+
+const ragStatusLabel = (file: LibraryFile) => {
+  const status = (file.ragStatus || "").toString().toLowerCase();
+  if (status === "ready") return `RAG ${file.ragChunkCount ? `${file.ragChunkCount}段` : "就绪"}`;
+  if (status === "empty") return "RAG 空";
+  if (status === "error") return "RAG 错误";
+  if (status === "pending") return "RAG 索引中";
+  return String(file.ragVectorStatus || "RAG");
+};
+
+const ragStatusClass = (file: LibraryFile) => {
+  const status = (file.ragStatus || "").toString().toLowerCase();
+  if (status === "ready") return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
+  if (status === "empty") return "bg-slate-500/15 text-slate-700 dark:text-slate-300";
+  if (status === "error") return "bg-rose-500/15 text-rose-700 dark:text-rose-300";
+  if (status === "pending") return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
+  return "bg-[color:var(--nav-hover-bg-strong)] text-[color:var(--nav-text)]";
+};
+
+const ragStatusTitle = (file: LibraryFile) => {
+  const parts = [
+    `状态: ${file.ragStatus || "unknown"}`,
+    file.ragChunkCount != null ? `分块: ${file.ragChunkCount}` : "",
+    file.ragTextChars != null ? `文本长度: ${file.ragTextChars}` : "",
+    file.ragVectorStatus ? `向量: ${file.ragVectorStatus}` : "",
+    file.ragError ? `错误: ${file.ragError}` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
 };
 
 const previewType = (file: LibraryFile) => {

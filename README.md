@@ -77,7 +77,7 @@ flowchart LR
 | `api-gateway` | 对外暴露兼容旧前端的 API 和 WebSocket 路径，代理到后端服务，并提供 `/health/ready` 聚合健康检查。 |
 | `identity` | 用户、会话、登录 token、注册、登录、修改密码、注销和内部 token 解析。 |
 | `learning-content` | 学生侧与通用学习工作流：对话、智能笔记、测验、知识卡片、错题本、学习记录、辩论、规划等。 |
-| `asset-library` | 文件上传、素材元数据、文件解析、转写入口和对象存储访问。 |
+| `asset-library` | 文件上传、素材元数据、文件解析、转写入口、RAG 索引和对象存储访问。 |
 | `ai-core` | 统一 LLM / Embedding 调用，集中管理模型供应商配置和内部调用接口。 |
 | `media-generation` | 播客、英语口语评测、TTS、Bilibili 搜索代理和媒体类供应商调用。 |
 | `teaching-content` | 教案、幻灯片、试卷、教学视频和教师侧内容生成。 |
@@ -225,7 +225,7 @@ TASK_QUEUE_PROVIDER=celery
 TASK_LEASE_PROVIDER=redis
 ```
 
-本地单进程排障仍可临时回退到本地文件 / inline runner；状态和向量数据默认使用 PostgreSQL + pgvector。
+本地单进程排障仍可临时回退到本地文件 / inline runner；状态和向量数据默认使用 PostgreSQL + pgvector。文件库上传后会自动进入多文件 RAG 索引，agent 调用前会按当前主题或问题检索相关片段。
 
 ### 即梦、TTS、讯飞和转写
 

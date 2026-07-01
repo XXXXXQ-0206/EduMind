@@ -1108,7 +1108,13 @@ class AuthDatabase:
                             ),
                         )
                 if self._sqlite_has_table(sqlite_conn, "chat_messages"):
-                    for row in sqlite_conn.execute("SELECT id, chat_id, role, content, at FROM chat_messages"):
+                    for row in sqlite_conn.execute(
+                        """
+                        SELECT m.id, m.chat_id, m.role, m.content, m.at
+                        FROM chat_messages m
+                        JOIN chats c ON c.id = m.chat_id
+                        """
+                    ):
                         conn.execute(
                             f"""
                             INSERT INTO {self.messages_table} (id, chat_id, role, content, at)

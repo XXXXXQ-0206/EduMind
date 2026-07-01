@@ -79,7 +79,15 @@ async def generate_slides(request: SlidesGenerateRequest, user: AuthUser = Depen
     materials_text = ""
     if include_materials and material_ids:
         files = await list_files_for_user(user.id, user.username, "teacher")
-        materials_text = await build_selected_files_context(files, material_ids, max_chars=10000, snippet_chars=4000)
+        materials_text = await build_selected_files_context(
+            files,
+            material_ids,
+            max_chars=10000,
+            snippet_chars=4000,
+            query=topic,
+            owner_id=user.id,
+            role="teacher",
+        )
 
     slide_id = f"slide-{uuid.uuid4().hex[:12]}"
     agent = SlidesAgent()

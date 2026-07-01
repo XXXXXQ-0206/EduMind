@@ -132,14 +132,22 @@ def _is_podcast_task_running(pid: str) -> bool:
     return bool(task and not task.done())
 
 
-async def _build_podcast_material_context(pid: str, ids: List[str]) -> str:
+async def _build_podcast_material_context(pid: str, ids: List[str], query: str) -> str:
     if not ids:
         return ""
     meta = await json_storage.get(f"podcast:{pid}") or {}
     owner_id = int(meta.get("owner_id") or 0)
     owner_username = str(meta.get("owner_username") or "")
     files = await list_files_for_user(owner_id, owner_username, "student")
-    return await build_selected_files_context(files, ids, max_chars=40000, snippet_chars=40000)
+    return await build_selected_files_context(
+        files,
+        ids,
+        max_chars=40000,
+        snippet_chars=8000,
+        query=query,
+        owner_id=owner_id,
+        role="student",
+    )
 
 
 async def _send_podcast_snapshot(websocket: WebSocket, pid: str) -> bool:
@@ -237,7 +245,7 @@ async def _run_podcast_generation(pid: str) -> None:
 
     materials_text = ""
     if include_materials and material_ids:
-        materials_text = await _build_podcast_material_context(pid, material_ids)
+        materials_text = await _build_podcast_material_context(pid, material_ids, topic)
         print(f"[podcast] materials pid={pid} chars={len(materials_text)}")
 
     agent = PodcastAgent()

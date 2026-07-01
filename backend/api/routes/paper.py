@@ -117,7 +117,15 @@ async def _run_paper_generation(paper_id: str) -> None:
         owner_id = int(meta.get("owner_id") or 0)
         owner_username = str(meta.get("owner_username") or "")
         files = await list_files_for_user(owner_id, owner_username, "teacher")
-        materials_text = await build_selected_files_context(files, material_ids, max_chars=8000, snippet_chars=8000)
+        materials_text = await build_selected_files_context(
+            files,
+            material_ids,
+            max_chars=8000,
+            snippet_chars=8000,
+            query=str(topic or ""),
+            owner_id=owner_id,
+            role="teacher",
+        )
         if materials_text:
             topic = f"{topic}\n\n备课资料内容:\n{materials_text}\n\n请优先基于资料出题，不足处再补充常识。"
 

@@ -298,7 +298,8 @@ import { env } from "../config/env";
 import { friendlyTaskMessage, generateSlides, getSlideDetail, err as apiErr, type SlideItem } from "../lib/api";
 import { getUserScopedStorageKey, readScopedStorage } from "../lib/userStorage";
 
-provide("learningFolderKey", computed(() => getUserScopedStorageKey("edumind-learning-folder-teacher")));
+const learningFolderKey = computed(() => getUserScopedStorageKey("edumind-learning-folder-teacher"));
+provide("learningFolderKey", learningFolderKey);
 provide("chatRole", computed(() => "teacher" as const));
 
 const route = useRoute();
@@ -343,6 +344,16 @@ const readSlidesHistory = () => {
 const writeSlidesHistory = (records: SlideRecord[]) => {
   localStorage.setItem(slidesHistoryKey.value, JSON.stringify(records));
   historyPanelRef.value?.loadSlides?.();
+};
+
+const loadLearningFolderIds = () => {
+  try {
+    const raw = readScopedStorage(learningFolderKey.value);
+    const parsed = raw ? (JSON.parse(raw) as string[]) : [];
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
 };
 
 const addPendingSlideRecord = (title: string) => {
@@ -407,11 +418,13 @@ const handleStart = async () => {
   downloadUrl.value = "";
 
   try {
+    const materialIds = includeMaterials.value ? loadLearningFolderIds() : [];
+    const useMaterials = includeMaterials.value && materialIds.length > 0;
     const res = await generateSlides({
       topic: trimmed,
       pageCount: pageCount.value,
-      includeMaterials: includeMaterials.value,
-      materialIds: [], // 可选：从 LearningFolderPanel 获取已选 materialIds
+      includeMaterials: useMaterials,
+      materialIds: useMaterials ? materialIds : [],
     });
     if (!res.ok || !res.slideId) {
       generateError.value = res.error || "生成失败";

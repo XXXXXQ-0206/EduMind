@@ -40,11 +40,19 @@ class LessonPlanRequest(BaseModel):
     materialIds: Optional[List[str]] = None
 
 
-async def _build_material_context_async(material_ids: List[str], user: AuthUser) -> str:
+async def _build_material_context_async(material_ids: List[str], user: AuthUser, query: str) -> str:
     if not material_ids:
         return ""
     files = await list_files_for_user(user.id, user.username, "teacher")
-    return await build_selected_files_context(files, material_ids, max_chars=8000, snippet_chars=8000)
+    return await build_selected_files_context(
+        files,
+        material_ids,
+        max_chars=8000,
+        snippet_chars=8000,
+        query=query,
+        owner_id=user.id,
+        role="teacher",
+    )
 
 
 @router.post("/lesson-plan")
@@ -58,7 +66,7 @@ async def create_lesson_plan(request: LessonPlanRequest, user: AuthUser = Depend
     material_ids = list(request.materialIds or [])
     materials_text = ""
     if include_materials and material_ids:
-        materials_text = await _build_material_context_async(material_ids, user)
+        materials_text = await _build_material_context_async(material_ids, user, topic)
 
     agent = LessonPlanAgent()
     result = await agent.execute(

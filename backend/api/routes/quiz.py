@@ -19,7 +19,7 @@ from core.task_dispatcher import dispatch_generation_task, register_task_handler
 from infrastructure.task_lease import acquire_task_lease, release_task_lease
 from utils.auth import require_auth, require_websocket_auth
 from utils.auth_contracts import AuthUser
-from utils.feature_support import extract_file_text_from_meta
+from utils.feature_support import build_selected_files_context
 from utils.live_events import forward_live_events, publish_live_event
 from utils.storage import (
     get_quiz_attempts,
@@ -181,31 +181,19 @@ async def _quiz_still_exists(quiz_id: str) -> bool:
     return isinstance(await json_storage.get(f"quiz:{quiz_id}"), dict)
 
 
-async def _build_material_context(owner_id: int, owner_username: str, quiz_scope: str, ids: List[str]) -> str:
+async def _build_material_context(owner_id: int, owner_username: str, quiz_scope: str, ids: List[str], query: str) -> str:
     if not ids:
         return ""
     files = await list_files_for_user(owner_id, owner_username, quiz_scope)
-    file_map = {f.get("id"): f for f in files if f.get("id")}
-    max_chars = 8000
-    parts: List[str] = []
-    used = 0
-
-    for fid in ids:
-        meta = file_map.get(fid)
-        if not meta:
-            continue
-        text = await extract_file_text_from_meta(meta)
-        if not text:
-            continue
-        remaining = max_chars - used
-        if remaining <= 0:
-            break
-        snippet = text[:remaining]
-        header = f"\n\n[资料] {meta.get('originalName') or meta.get('filename') or 'document'}\n"
-        parts.append(header + snippet)
-        used += len(snippet)
-
-    return "".join(parts).strip()
+    return await build_selected_files_context(
+        files,
+        ids,
+        max_chars=8000,
+        snippet_chars=8000,
+        query=query,
+        owner_id=owner_id,
+        role=quiz_scope,
+    )
 
 
 async def _generate_quiz(quiz_id: str) -> None:
@@ -246,7 +234,7 @@ async def _generate_quiz(quiz_id: str) -> None:
         prompt_topic = base_topic
         if use_materials and material_ids:
             print(f"[DEBUG] Quiz {quiz_id} scope={quiz_scope} owner_id={owner_id} material_ids={len(material_ids)}")
-            materials_text = await _build_material_context(owner_id, owner_username, quiz_scope, material_ids)
+            materials_text = await _build_material_context(owner_id, owner_username, quiz_scope, material_ids, base_topic)
             print(f"[DEBUG] Quiz {quiz_id} materials_text length={len(materials_text) if materials_text else 0}")
             if materials_text:
                 prompt_topic = (

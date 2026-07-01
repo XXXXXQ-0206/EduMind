@@ -108,6 +108,7 @@ async def _run_chat_generation(chat_id: str) -> None:
         history = await get_messages(chat_id)
         if not history or history[-1].get("role") != "user":
             return
+        latest_query = str(history[-1].get("content") or "")
 
         await _send_chat_event(chat_id, {"type": "phase", "value": "generating"})
 
@@ -132,7 +133,15 @@ async def _run_chat_generation(chat_id: str) -> None:
             selected_ids = ids or [f.get("id") for f in files if f.get("id")]
             if not selected_ids:
                 return ""
-            return await build_selected_files_context(files, selected_ids, max_chars=8000, snippet_chars=8000)
+            return await build_selected_files_context(
+                files,
+                selected_ids,
+                max_chars=8000,
+                snippet_chars=8000,
+                query=latest_query,
+                owner_id=owner_id,
+                role=chat_scope,
+            )
 
         length_prompts = {
             "Short": "请用约200字回答问题，保持简洁明了。",

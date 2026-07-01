@@ -148,9 +148,22 @@ export type LibraryFile = {
   size: number;
   uploadedAt: number;
   url: string;
+  ragStatus?: "pending" | "ready" | "empty" | "error" | string;
+  ragIndexedAt?: number;
+  ragChunkCount?: number;
+  ragTextChars?: number;
+  ragVectorStatus?: "pending" | "indexed" | "keyword-fallback" | "skipped" | "failed" | string;
+  ragError?: string;
 };
 export type FileListResponse = { ok: true; files: LibraryFile[] };
 export type FileUploadResponse = { ok: true; files: LibraryFile[] };
+export type FileRagSearchResponse = {
+  ok: true;
+  context: string;
+  chunks: Array<Record<string, unknown>>;
+  files: Array<Record<string, unknown>>;
+  failedFiles: Array<Record<string, unknown>>;
+};
 export type CompanionHistoryEntry = { role: "user" | "assistant"; content: string }
 export type CompanionAnswer = { topic: string; answer: string; flashcards: FlashCard[] }
 export type CompanionAskResponse = { ok: boolean; companion: CompanionAnswer }
@@ -1322,6 +1335,29 @@ export async function deleteFile(fileId: string, role?: "student" | "teacher") {
   const qs = role ? `?role=${encodeURIComponent(role)}` : "";
   return req<{ ok: boolean }>(`${env.backend}/files/${encodeURIComponent(fileId)}${qs}`, {
     method: "DELETE",
+  });
+}
+
+export async function rebuildFileRagIndex(fileId: string, role?: "student" | "teacher") {
+  const qs = role ? `?role=${encodeURIComponent(role)}` : "";
+  return req<{ ok: boolean; rag?: Record<string, unknown> }>(
+    `${env.backend}/files/${encodeURIComponent(fileId)}/rag/index${qs}`,
+    { method: "POST" }
+  );
+}
+
+export async function searchFileRag(input: {
+  query?: string;
+  role?: "student" | "teacher";
+  materialIds?: string[];
+  maxChunks?: number;
+  maxChars?: number;
+}) {
+  return req<FileRagSearchResponse>(`${env.backend}/files/rag/search`, {
+    method: "POST",
+    headers: jsonHeaders({}),
+    body: JSON.stringify(input),
+    timeout: Math.max(env.timeout, 120000),
   });
 }
 
