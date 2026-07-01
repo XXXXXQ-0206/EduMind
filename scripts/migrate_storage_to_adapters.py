@@ -15,6 +15,7 @@ from typing import Any, Iterable, Optional
 from config import config
 from infrastructure.kv_store import JsonFileKeyValueStore, KeyValueStore, create_kv_store
 from infrastructure.object_store import ObjectStore, create_object_store, normalize_object_key
+from utils.storage import VectorStore
 
 
 EXACT_KV_KEYS = {
@@ -84,6 +85,10 @@ class MigrationReport:
     kv_written: int = 0
     kv_skipped: int = 0
     kv_failed: int = 0
+    vectors_scanned: int = 0
+    vectors_written: int = 0
+    vectors_skipped: int = 0
+    vectors_failed: int = 0
     objects_scanned: int = 0
     objects_written: int = 0
     objects_skipped: int = 0
@@ -121,7 +126,16 @@ def iter_legacy_kv_files(source_dir: Path) -> Iterable[tuple[str, Path]]:
     for file_path in sorted(source_dir.glob("*.json")):
         if not file_path.is_file():
             continue
+        if file_path.stem.startswith("vectors_"):
+            continue
         yield restore_legacy_kv_key(file_path.stem), file_path
+
+
+def iter_legacy_vector_files(source_dir: Path) -> Iterable[tuple[str, Path]]:
+    for file_path in sorted(source_dir.glob("vectors_*.json")):
+        if not file_path.is_file():
+            continue
+        yield file_path.stem.removeprefix("vectors_"), file_path
 
 
 def iter_legacy_object_files(source_dir: Path, object_dirs: Optional[set[str]] = None) -> Iterable[tuple[str, Path]]:
@@ -187,12 +201,43 @@ async def migrate_objects(
             report.errors.append(f"object:{key}:{type(exc).__name__}:{exc}")
 
 
+async def migrate_vectors(
+    source_dir: Path,
+    report: MigrationReport,
+    *,
+    write: bool,
+) -> None:
+    source = JsonFileKeyValueStore(base_dir=source_dir)
+    for namespace, file_path in iter_legacy_vector_files(source_dir):
+        report.vectors_scanned += 1
+        try:
+            value = await source.get(file_path.stem)
+            if not isinstance(value, dict):
+                report.vectors_skipped += 1
+                continue
+            texts = value.get("texts")
+            vectors = value.get("vectors")
+            metadatas = value.get("metadatas")
+            if not isinstance(texts, list) or not isinstance(vectors, list):
+                report.vectors_skipped += 1
+                continue
+            if write:
+                await VectorStore(namespace).add_precomputed_documents(texts, vectors, metadatas if isinstance(metadatas, list) else None)
+                report.vectors_written += 1
+            else:
+                report.vectors_skipped += 1
+        except Exception as exc:
+            report.vectors_failed += 1
+            report.errors.append(f"vector:{file_path.name}:{type(exc).__name__}:{exc}")
+
+
 async def run_migration(
     source_dir: Path,
     *,
     write: bool,
     include_kv: bool,
     include_objects: bool,
+    include_vectors: bool = True,
 ) -> MigrationReport:
     source_dir = source_dir.resolve()
     if not source_dir.exists() or not source_dir.is_dir():
@@ -201,6 +246,8 @@ async def run_migration(
     report = MigrationReport(dry_run=not write, source_dir=str(source_dir))
     if include_kv:
         await migrate_kv(source_dir, create_kv_store(), report, write=write)
+    if include_vectors:
+        await migrate_vectors(source_dir, report, write=write)
     if include_objects:
         await migrate_objects(source_dir, create_object_store(), report, write=write)
     return report
@@ -211,6 +258,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-dir", type=Path, default=config.storage_dir, help="Legacy storage directory")
     parser.add_argument("--write", action="store_true", help="Actually write into configured adapters")
     parser.add_argument("--skip-kv", action="store_true", help="Skip JSON/KV migration")
+    parser.add_argument("--skip-vectors", action="store_true", help="Skip legacy vector JSON migration")
     parser.add_argument("--skip-objects", action="store_true", help="Skip object/artifact migration")
     return parser.parse_args()
 
@@ -221,6 +269,7 @@ async def main() -> None:
         args.source_dir,
         write=bool(args.write),
         include_kv=not args.skip_kv,
+        include_vectors=not args.skip_vectors,
         include_objects=not args.skip_objects,
     )
     print(json.dumps(asdict(report), ensure_ascii=False, indent=2))

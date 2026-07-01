@@ -120,6 +120,8 @@ Compose 会给服务注入以下默认基础设施配置，通常不要在新机
 ```text
 KV_STORE_PROVIDER=postgres
 POSTGRES_DSN=postgresql://edumind:edumind@postgres:5432/edumind
+VECTOR_STORE_PROVIDER=pgvector
+PGVECTOR_TABLE=edumind_vectors
 OBJECT_STORE_PROVIDER=s3
 EVENT_BUS_PROVIDER=redis
 TASK_QUEUE_PROVIDER=redis
@@ -214,7 +216,7 @@ Compose 创建命名卷：
 - `ai-core` 负责直接调用 LLM / Embedding provider。
 - `generation-worker` 消费 Redis 队列中的长任务。
 - `bilibili-bridge` 是独立 Node 服务，连接 `services/bilibili-mcp`。
-- PostgreSQL 保存 KV JSONB 状态。
+- PostgreSQL 保存账户/会话、KV JSONB 状态和 pgvector 向量数据。
 - Redis 处理事件、租约和任务队列。
 - MinIO 保存上传文件和生成对象。
 

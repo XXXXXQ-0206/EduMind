@@ -3,14 +3,16 @@
 支持 JSON 文件存储和向量存储
 """
 import asyncio
+import math
 from pathlib import Path
 from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
 from typing import Any, Optional, List, Dict
 from datetime import datetime
 from urllib.parse import unquote, urlparse
 
 from config import config
-from infrastructure.kv_store import KeyValueItem, KeyValueStore, create_kv_store, sanitize_key
+from infrastructure.kv_store import KeyValueItem, KeyValueStore, create_kv_store, sanitize_key, validate_sql_identifier
 from infrastructure.object_store import create_object_store
 from utils.auth_contracts import ADMIN_USERNAME
 
@@ -124,7 +126,7 @@ class JSONStorage:
 
     def __init__(self, base_dir: Optional[Path] = None):
         self.base_dir = base_dir or config.storage_dir
-        self.store: KeyValueStore = create_kv_store(self.base_dir)
+        self.store: KeyValueStore = create_kv_store(base_dir=base_dir)
         self.lock = asyncio.Lock()
 
     async def get(self, key: str) -> Optional[Any]:
@@ -157,8 +159,8 @@ class JSONStorage:
         return self.store.path_for_key(key)
 
 
-class VectorStore:
-    """向量存储（基于 FAISS 或 ChromaDB）"""
+class LegacyJsonVectorStore:
+    """Legacy JSON vector storage kept only for migration/debug fallback."""
 
     def __init__(self, namespace: str):
         self.namespace = namespace
@@ -187,6 +189,23 @@ class VectorStore:
 
         # 保存到 JSON 存储
         await self.storage.set(f"vectors:{self.namespace}", data)
+
+    async def add_precomputed_documents(
+        self,
+        texts: List[str],
+        vectors: List[Any],
+        metadatas: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        """Import already-computed vectors into the legacy JSON fallback."""
+        await self.storage.set(
+            f"vectors:{self.namespace}",
+            {
+                "texts": texts,
+                "vectors": vectors,
+                "metadatas": metadatas or [{} for _ in texts],
+                "created_at": datetime.now().isoformat(),
+            },
+        )
 
     async def similarity_search(
         self,
@@ -235,7 +254,217 @@ class VectorStore:
         await self.storage.delete(f"vectors:{self.namespace}")
 
 
-# 全局存储实例
+# Runtime pgvector store.
+class VectorStore:
+    """pgvector-backed vector storage."""
+
+    def __init__(
+        self,
+        namespace: str,
+        dsn: Optional[str] = None,
+        table_name: Optional[str] = None,
+        connection_factory: Optional[Any] = None,
+    ):
+        provider = (config.vector_store_provider or "pgvector").strip().lower()
+        if provider not in {"pgvector", "postgres", "postgresql"}:
+            raise ValueError(f"Unsupported VECTOR_STORE_PROVIDER: {provider}")
+        self.namespace = namespace
+        self.dsn = dsn or config.postgres_dsn
+        self.table_name = validate_sql_identifier(table_name or config.pgvector_table)
+        self._connection_factory = connection_factory
+        self._schema_lock = asyncio.Lock()
+        self._schema_ready = False
+
+    async def add_documents(
+        self,
+        texts: List[str],
+        metadatas: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        """Add documents to the namespace, replacing any previous batch."""
+        from utils.llm import get_embeddings
+
+        if not texts:
+            await self.delete()
+            return
+
+        embeddings = get_embeddings()
+        vectors = await embeddings.aembed_documents(texts)
+        metadata_items = metadatas or [{} for _ in texts]
+        if len(metadata_items) != len(texts):
+            raise ValueError("metadatas length must match texts length")
+        if len(vectors) != len(texts):
+            raise ValueError("embedding count must match texts length")
+
+        await self._ensure_schema()
+        async with self._connection() as conn:
+            async with conn.transaction():
+                await conn.execute(f"DELETE FROM {self.table_name} WHERE namespace = %s", (self.namespace,))
+                for ordinal, (text, vector, metadata) in enumerate(zip(texts, vectors, metadata_items)):
+                    await conn.execute(
+                        f"""
+                        INSERT INTO {self.table_name} (namespace, ordinal, text, metadata, embedding, created_at)
+                        VALUES (%s, %s, %s, %s, %s::vector, now())
+                        """,
+                        (
+                            self.namespace,
+                            ordinal,
+                            text,
+                            self._jsonb(metadata or {}),
+                            self._vector_literal(vector),
+                        ),
+                    )
+
+    async def add_precomputed_documents(
+        self,
+        texts: List[str],
+        vectors: List[Any],
+        metadatas: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        """Import already-computed vectors into pgvector."""
+        if not texts:
+            await self.delete()
+            return
+        metadata_items = metadatas or [{} for _ in texts]
+        if len(metadata_items) != len(texts):
+            raise ValueError("metadatas length must match texts length")
+        if len(vectors) != len(texts):
+            raise ValueError("vector count must match texts length")
+
+        await self._ensure_schema()
+        async with self._connection() as conn:
+            async with conn.transaction():
+                await conn.execute(f"DELETE FROM {self.table_name} WHERE namespace = %s", (self.namespace,))
+                for ordinal, (text, vector, metadata) in enumerate(zip(texts, vectors, metadata_items)):
+                    await conn.execute(
+                        f"""
+                        INSERT INTO {self.table_name} (namespace, ordinal, text, metadata, embedding, created_at)
+                        VALUES (%s, %s, %s, %s, %s::vector, now())
+                        """,
+                        (
+                            self.namespace,
+                            ordinal,
+                            text,
+                            self._jsonb(metadata or {}),
+                            self._vector_literal(vector),
+                        ),
+                    )
+
+    async def similarity_search(
+        self,
+        query: str,
+        k: int = 4,
+    ) -> List[Dict[str, Any]]:
+        """Run cosine similarity search inside PostgreSQL/pgvector."""
+        from utils.llm import get_embeddings
+
+        embeddings = get_embeddings()
+        query_vector = await embeddings.aembed_query(query)
+        query_literal = self._vector_literal(query_vector)
+
+        await self._ensure_schema()
+        async with self._connection() as conn:
+            cursor = await conn.execute(
+                f"""
+                SELECT text, metadata, 1 - (embedding <=> %s::vector) AS score
+                FROM {self.table_name}
+                WHERE namespace = %s
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (query_literal, self.namespace, query_literal, max(1, int(k))),
+            )
+            rows = await cursor.fetchall()
+
+        return [
+            {
+                "text": row["text"] if isinstance(row, dict) else row[0],
+                "metadata": row["metadata"] if isinstance(row, dict) else row[1],
+                "score": float(row["score"] if isinstance(row, dict) else row[2]),
+            }
+            for row in rows
+        ]
+
+    async def delete(self) -> None:
+        """Delete all vectors in the namespace."""
+        await self._ensure_schema()
+        async with self._connection() as conn:
+            await conn.execute(f"DELETE FROM {self.table_name} WHERE namespace = %s", (self.namespace,))
+            await self._commit(conn)
+
+    async def _ensure_schema(self) -> None:
+        if self._schema_ready:
+            return
+        async with self._schema_lock:
+            if self._schema_ready:
+                return
+            async with self._connection() as conn:
+                await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                await conn.execute(
+                    f"""
+                    CREATE TABLE IF NOT EXISTS {self.table_name} (
+                        id bigserial PRIMARY KEY,
+                        namespace text NOT NULL,
+                        ordinal integer NOT NULL,
+                        text text NOT NULL,
+                        metadata jsonb NOT NULL DEFAULT '{{}}'::jsonb,
+                        embedding vector NOT NULL,
+                        created_at timestamptz NOT NULL DEFAULT now()
+                    )
+                    """
+                )
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS {self.table_name}_namespace_idx "
+                    f"ON {self.table_name} (namespace, ordinal)"
+                )
+                await self._commit(conn)
+            self._schema_ready = True
+
+    @asynccontextmanager
+    async def _connection(self):
+        if self._connection_factory is not None:
+            async with self._connection_factory() as conn:
+                yield conn
+            return
+
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ImportError as exc:
+            raise RuntimeError("VectorStore requires the 'psycopg' package and a pgvector-enabled PostgreSQL database") from exc
+
+        conn = await psycopg.AsyncConnection.connect(self.dsn, row_factory=dict_row)
+        try:
+            yield conn
+        finally:
+            await conn.close()
+
+    async def _commit(self, conn: Any) -> None:
+        commit = getattr(conn, "commit", None)
+        if commit is not None:
+            result = commit()
+            if hasattr(result, "__await__"):
+                await result
+
+    def _jsonb(self, value: Any) -> Any:
+        if self._connection_factory is not None:
+            return value
+        from psycopg.types.json import Jsonb
+
+        return Jsonb(value)
+
+    def _vector_literal(self, vector: Any) -> str:
+        values: List[str] = []
+        for value in vector:
+            number = float(value)
+            if not math.isfinite(number):
+                raise ValueError("vector values must be finite numbers")
+            values.append(format(number, ".12g"))
+        if not values:
+            raise ValueError("vector must not be empty")
+        return f"[{','.join(values)}]"
+
+
+# Global storage instance.
 json_storage = JSONStorage()
 
 

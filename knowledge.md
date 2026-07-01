@@ -77,6 +77,7 @@ Shared infrastructure
 | 适配器 | 配置项 | Docker 默认 | 本地兼容 |
 |--------|--------|-------------|----------|
 | KV 状态 | `KV_STORE_PROVIDER` | `postgres` | `json` |
+| 向量存储 | `VECTOR_STORE_PROVIDER` | `pgvector` | legacy JSON vector import |
 | 对象文件 | `OBJECT_STORE_PROVIDER` | `s3` / MinIO | `local` |
 | 实时事件 | `EVENT_BUS_PROVIDER` | `redis` | `memory` |
 | 任务队列 | `TASK_QUEUE_PROVIDER` | `redis` | `inline` |
@@ -84,7 +85,8 @@ Shared infrastructure
 
 关键代码：
 
-- `backend/infrastructure/kv_store.py`：JSON 文件、PostgreSQL JSONB KV。
+- `backend/infrastructure/kv_store.py`：PostgreSQL JSONB KV，保留 JSON 文件迁移/测试适配器。
+- `backend/utils/storage.py`：业务 JSONStorage API 和 pgvector-backed VectorStore。
 - `backend/infrastructure/object_store.py`：本地文件和 S3/MinIO 对象存储。
 - `backend/infrastructure/event_bus.py`：内存事件和 Redis Pub/Sub。
 - `backend/infrastructure/task_queue.py`：inline 队列和 Redis 队列。
@@ -102,7 +104,7 @@ Shared infrastructure
 4. 业务服务读写 PostgreSQL KV、MinIO 对象或 Redis 事件。
 5. 响应返回给 Gateway，再返回前端。
 
-账户和会话由 `identity` 服务持有。当前 identity 仍兼容使用 `storage/edumind.sqlite3` 保存账户数据，其他服务在 Compose 中通过 `AUTH_VALIDATION_MODE=remote` 调 `/auth/internal/resolve`，不直接读取账户库。
+账户和会话由 `identity` 服务持有并写入 PostgreSQL。旧 `storage/edumind.sqlite3` 仅作为启动迁移来源；其他服务在 Compose 中通过 `AUTH_VALIDATION_MODE=remote` 调 `/auth/internal/resolve`，不直接读取账户库。
 
 ### 4.2 长耗时生成任务
 
@@ -182,7 +184,7 @@ AI_CORE_URL=http://ai-core:5106
 
 - 入口：`frontend/src/pages/AuthPortal.vue`。
 - 后端：`backend/api/routes/auth.py`、`backend/utils/auth.py`、`backend/utils/auth_db.py`。
-- identity 服务在本地模式使用 SQLite 兼容旧账户数据；边界服务通过 `AUTH_VALIDATION_MODE=remote` 调 `/auth/internal/resolve`。
+- identity 服务使用 PostgreSQL 保存账户和会话；边界服务通过 `AUTH_VALIDATION_MODE=remote` 调 `/auth/internal/resolve`。
 - 业务数据按用户、scope、role 或 owner 字段隔离。新注册账户不会继承默认演示数据。
 
 ### 6.2 文件库与资料上下文
@@ -245,7 +247,7 @@ python -m pytest tests/backend -q
 
 1. 前端 API 路径兼容：Gateway 继续暴露旧路径。
 2. 本地单进程兼容：`BACKEND_ROLE=monolith` 可用于排障和旧数据迁移，不是推荐启动方式。
-3. 旧数据兼容：`scripts/migrate_storage_to_adapters.py` 支持把 `storage/` 里的 JSON 和对象文件迁入 PostgreSQL / MinIO。
+3. 旧数据兼容：启动时可迁移 SQLite 账户库，`scripts/migrate_storage_to_adapters.py` 支持把 `storage/` 里的 JSON 和对象文件迁入 PostgreSQL / MinIO。
 
 迁移数据时先 dry-run：
 
@@ -266,7 +268,7 @@ python scripts/migrate_storage_to_adapters.py --source-dir storage --write
    教学视频、播客、试卷等任务耗时长，进程重启或连接断开会丢状态。现在 HTTP 创建任务，worker 执行，WebSocket 只订阅进度，状态可持久化、可重放。
 
 4. **为什么要抽 KV/ObjectStore/EventBus/TaskQueue 适配器？**
-   微服务不能依赖进程内变量和本地文件路径。适配器让本地开发保留 JSON/文件系统，又能在 Docker 中切到 PostgreSQL、Redis、MinIO。
+   微服务不能依赖进程内变量和本地文件路径。适配器让旧 JSON/文件系统数据可迁移，又能在 Docker 中统一走 PostgreSQL、pgvector、Redis、MinIO。
 
 5. **AI Core 的价值是什么？**
    模型 provider、密钥、调用参数和内部鉴权集中在一个边界。业务服务只表达“要生成什么”，不直接耦合具体模型 SDK。
