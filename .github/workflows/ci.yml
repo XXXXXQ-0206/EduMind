@@ -34,6 +34,9 @@ jobs:
       - name: Run backend tests
         run: python -m pytest tests/backend -q
 
+      - name: Prepare Compose environment
+        run: cp .env.example .env
+
       - name: Validate Compose configuration
         run: docker compose config --quiet
 

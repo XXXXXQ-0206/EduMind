@@ -1,8 +1,7 @@
 import { env } from "../config/env";
 import { getAuthToken, writeAuthSession } from "./auth";
 
-export type TaskStartLinks = { stream: string; events?: string };
-export type ChatStartResponse = { ok: true; chatId: string } & TaskStartLinks;
+export type ChatStartResponse = { ok: true; chatId: string; stream: string };
 export type ChatMessage = { role: "user" | "assistant"; content: string; at: number };
 export type ChatInfo = { id: string; title?: string; createdAt?: number };
 export type ChatsList = { ok: true; chats: ChatInfo[] };
@@ -58,8 +57,14 @@ export type PodcastMeta = {
   status?: GenerationRecordStatus;
   error?: string;
 };
-export type QuizStartResponse = { ok: true; quizId: string } & TaskStartLinks
-export type QuizEvent = { type: "ready" | "phase" | "quiz" | "done" | "error" | "ping"; quizId?: string; value?: string; quiz?: unknown; error?: string; t?: number }
+export type QuizStartResponse = { ok: true; quizId: string; stream: string }
+export type QuizEvent =
+  | { type: "ready"; quizId?: string }
+  | { type: "phase"; value: string }
+  | { type: "quiz"; quiz: unknown }
+  | { type: "done" }
+  | { type: "error"; error: string }
+  | { type: "ping"; t?: number }
 export type PaperItem = {
   id: number;
   type: "choice" | "fill" | "application";
@@ -69,7 +74,7 @@ export type PaperItem = {
   answer?: string;
   explanation?: string;
 };
-export type PaperStartResponse = { ok: true; paperId: string } & TaskStartLinks;
+export type PaperStartResponse = { ok: true; paperId: string; stream: string };
 export type PaperEvent = { type: "ready" | "phase" | "paper" | "done" | "error"; paperId?: string; value?: string; paper?: PaperItem[]; error?: string };
 export type QuizAttempt = {
   questionId: number;
@@ -133,7 +138,7 @@ export type WeakPoint = {
   suggestion: string;
   questionIndices: number[];
 };
-export type SmartNotesStart = { ok: true; noteId: string } & TaskStartLinks
+export type SmartNotesStart = { ok: true; noteId: string; stream: string }
 export type LibraryFile = {
   id: string;
   filename: string;
@@ -186,6 +191,7 @@ export type ExamEvent =
   | { type: "exam"; examId: string; payload: Question[] }
   | { type: "done" }
   | { type: "error"; examId?: string; error: string };
+export type ExamMeta = { id: string; name: string; sections: unknown[] };
 export type PodcastEvent =
   | { type: "ready"; pid: string }
   | { type: "phase"; value: string }
@@ -354,7 +360,8 @@ async function req<T = unknown>(
   }
 }
 
-const jsonHeaders = (_?: unknown) => {
+const jsonHeaders = (body?: unknown) => {
+  void body;
   const h = new Headers();
   h.set("content-type", "application/json");
   const token = getAuthToken();
@@ -369,38 +376,6 @@ function wsURL(path: string) {
   const token = getAuthToken();
   if (token) full.searchParams.set("token", token);
   return full.toString();
-}
-
-function sseURL(path: string) {
-  const u = new URL(env.backend);
-  const full = new URL(`${u.protocol}//${u.host}${path}`);
-  const token = getAuthToken();
-  if (token) full.searchParams.set("token", token);
-  return full.toString();
-}
-
-export type TaskEventKind = "chat" | "quiz" | "smartnotes" | "podcast" | "paper" | "exam" | "teaching-video";
-
-export function connectTaskEvents<T extends { type?: string; error?: string }>(
-  kind: TaskEventKind,
-  taskId: string,
-  onEvent: (ev: T) => void,
-) {
-  const source = new EventSource(sseURL(`/tasks/${kind}/${encodeURIComponent(taskId)}/events`));
-  source.onmessage = (message) => {
-    try {
-      onEvent(JSON.parse(message.data) as T);
-    } catch {
-      onEvent({ type: "error", error: "invalid_message" } as T);
-    }
-  };
-  source.onerror = () => onEvent({ type: "error", error: "stream_error" } as T);
-  return {
-    source,
-    close: () => {
-      try { source.close(); } catch { }
-    },
-  };
 }
 
 export async function register(username: string, password: string) {
@@ -511,12 +486,14 @@ export function connectChatStream(chatId: string, onEvent: (ev: ChatEvent) => vo
     try {
       const data = JSON.parse(m.data as string) as ChatEvent;
       onEvent(data);
-    } catch { }
+    } catch {
+      // Ignore malformed stream messages.
+    }
   };
   ws.onerror = () => {
     onEvent({ type: "error", error: "stream_error" });
   };
-  return { ws, close: () => { try { ws.close(); } catch { } } };
+  return { ws, close: () => { try { ws.close(); } catch { /* already closed */ } } };
 }
 
 export async function chatAskOnce(opts: {
@@ -651,14 +628,14 @@ export async function deleteKnowledgeDeck(id: string) {
 }
 
 export async function getExams() {
-  return req<{ ok: true; exams: { id: string; name: string; sections: any[] }[] }>(
+  return req<{ ok: true; exams: ExamMeta[] }>(
     `${env.backend}/exams`,
     { method: "GET" }
   )
 }
 
 export async function startExam(examId: string) {
-  return req<{ ok: true; runId: string } & TaskStartLinks>(
+  return req<{ ok: true; runId: string; stream: string }>(
     `${env.backend}/exam`,
     {
       method: "POST",
@@ -674,10 +651,12 @@ export function connectExamStream(runId: string, onEvent: (ev: ExamEvent) => voi
   ws.onmessage = (m) => {
     try {
       onEvent(JSON.parse(m.data as string) as ExamEvent)
-    } catch { }
+    } catch {
+      // Ignore malformed stream messages.
+    }
   }
   ws.onerror = () => onEvent({ type: "error", error: "stream_error" })
-  return { ws, close: () => { try { ws.close() } catch { } } }
+  return { ws, close: () => { try { ws.close() } catch { /* already closed */ } } }
 }
 
 export async function smartnotesStart(input: {
@@ -720,7 +699,9 @@ export function connectSmartnotesStream(noteId: string, onEvent: (ev: SmartNotes
   ws.onmessage = (m) => {
     try {
       onEvent(JSON.parse(m.data as string) as SmartNotesEvent);
-    } catch { }
+    } catch {
+      // Ignore malformed stream messages.
+    }
   };
   ws.onerror = () => onEvent({ type: "error", error: "stream_error" });
   ws.onclose = (event) => {
@@ -731,7 +712,11 @@ export function connectSmartnotesStream(noteId: string, onEvent: (ev: SmartNotes
     ws,
     close: () => {
       closedByClient = true;
-      try { ws.close(); } catch { }
+      try {
+        ws.close();
+      } catch {
+        // WebSocket may already be closed.
+      }
     },
   };
 }
@@ -802,7 +787,7 @@ export function saveQuizAttemptAnswer(quizId: string, answer: QuizAttempt) {
 }
 
 // ---------- 教学视频 (teaching video) ----------
-export type TeachingVideoStartResponse = { ok: true; videoId: string } & TaskStartLinks;
+export type TeachingVideoStartResponse = { ok: true; videoId: string; stream: string };
 export type TeachingVideoEvent =
   | { type: "ready"; videoId?: string }
   | { type: "phase"; value: string }
@@ -860,7 +845,9 @@ export function connectTeachingVideoStream(videoId: string, onEvent: (ev: Teachi
   ws.onmessage = (m) => {
     try {
       onEvent(JSON.parse(m.data as string) as TeachingVideoEvent);
-    } catch {}
+    } catch {
+      // Ignore malformed stream messages.
+    }
   };
   ws.onclose = (e) => {
     if (closedByClient) return;
@@ -871,7 +858,11 @@ export function connectTeachingVideoStream(videoId: string, onEvent: (ev: Teachi
     ws,
     close: () => {
       closedByClient = true;
-      try { ws.close(); } catch {}
+      try {
+        ws.close();
+      } catch {
+        // WebSocket may already be closed.
+      }
     },
   };
 }
@@ -902,7 +893,7 @@ export async function podcastStart(payload: {
   materialIds?: string[];
   length?: "short" | "medium" | "long";
 }) {
-  return req<{ ok: boolean; pid: string } & TaskStartLinks>(`${env.backend}/podcast`, {
+  return req<{ ok: boolean; pid: string; stream: string }>(`${env.backend}/podcast`, {
     method: "POST",
     headers: jsonHeaders({}),
     body: JSON.stringify(payload),
@@ -987,14 +978,11 @@ export function connectPodcastStream(pid: string, onEvent: (ev: PodcastEvent) =>
   const ws = new WebSocket(wsUrl)
   let closedByClient = false
 
-  ws.onopen = () => {
-  }
-
   ws.onmessage = (e) => {
     try {
-      const msg = JSON.parse(e.data)
+      const msg = JSON.parse(e.data as string) as PodcastEvent
       onEvent(msg)
-    } catch (err) {
+    } catch {
       onEvent({ type: "error", error: "invalid_message" })
     }
   }
@@ -1004,12 +992,16 @@ export function connectPodcastStream(pid: string, onEvent: (ev: PodcastEvent) =>
     onEvent({ type: "close", code: e.code })
   }
 
-  ws.onerror = () => onEvent({ type: "error", error: "stream_error" } as any)
+  ws.onerror = () => onEvent({ type: "error", error: "stream_error" })
   return {
     ws,
     close: () => {
       closedByClient = true
-      try { ws.close() } catch { }
+      try {
+        ws.close()
+      } catch {
+        // WebSocket may already be closed.
+      }
     },
   }
 }
@@ -1021,19 +1013,25 @@ export function connectQuizStream(quizId: string, onEvent: (ev: QuizEvent) => vo
   ws.onmessage = m => {
     try {
       onEvent(JSON.parse(m.data as string) as QuizEvent)
-    } catch { }
+    } catch {
+      // Ignore malformed stream messages.
+    }
   };
-  ws.onerror = () => onEvent({ type: "error", error: "stream_error" } as any);
+  ws.onerror = () => onEvent({ type: "error", error: "stream_error" });
   ws.onclose = (event) => {
     if (closedByClient) return;
     const code = event?.code ?? 0;
-    onEvent({ type: "error", error: code ? `stream_closed:${code}` : "stream_closed" } as any);
+    onEvent({ type: "error", error: code ? `stream_closed:${code}` : "stream_closed" });
   };
   return {
     ws,
     close: () => {
       closedByClient = true;
-      try { ws.close() } catch { }
+      try {
+        ws.close()
+      } catch {
+        // WebSocket may already be closed.
+      }
     },
   };
 }
@@ -1060,10 +1058,21 @@ export function connectPaperStream(paperId: string, onEvent: (ev: PaperEvent) =>
   ws.onmessage = (m) => {
     try {
       onEvent(JSON.parse(m.data as string) as PaperEvent);
-    } catch { }
+    } catch {
+      // Ignore malformed stream messages.
+    }
   };
   ws.onerror = () => onEvent({ type: "error", error: "stream_error" });
-  return { ws, close: () => { try { ws.close(); } catch { } } };
+  return {
+    ws,
+    close: () => {
+      try {
+        ws.close();
+      } catch {
+        // WebSocket may already be closed.
+      }
+    },
+  };
 }
 
 export function listPapers() {
@@ -1115,6 +1124,7 @@ export type PlannerTask = {
   files?: { id: string; filename: string; originalName: string; mimeType: string; size: number; uploadedAt: number }[];
   steps?: string[];
 };
+export type PlannerFile = NonNullable<PlannerTask["files"]>[number];
 
 export type PlannerSlot = { id: string; taskId: string; start: number; end: number; kind: "focus" | "review" | "buffer"; done?: boolean }
 export type WeeklyPlan = { days: { date: string; slots: PlannerSlot[] }[] }
@@ -1127,12 +1137,12 @@ export type PlannerEvent =
   | { type: "materials.done"; id: string; total: number }
   | { type: "reminder"; text: string; at: number; taskId?: string; scheduledFor?: string }
   | { type: "daily.digest"; date: string; due: { id: string; title: string; dueAt: number }[]; sessions: number; message: string }
-  | { type: "evening.review"; date: string; stats: any; tomorrowTasks: { id: string; title: string }[]; message: string }
+  | { type: "evening.review"; date: string; stats: unknown; tomorrowTasks: { id: string; title: string }[]; message: string }
   | { type: "break.reminder"; text: string; at: string }
   | { type: "task.created"; task: PlannerTask }
   | { type: "task.updated"; task: PlannerTask }
   | { type: "task.deleted"; taskId: string }
-  | { type: "task.files.added"; taskId: string; files: any[] }
+  | { type: "task.files.added"; taskId: string; files: PlannerFile[] }
   | { type: "task.file.removed"; taskId: string; fileId: string }
   | { type: "session.started"; session: { id: string; taskId: string; slotId?: string; startedAt: string; status: string } }
   | { type: "session.ended"; session: { id: string; endedAt: string; minutesWorked: number; completed: boolean; status: string } }
@@ -1174,7 +1184,7 @@ export async function plannerWeekly(cram?: boolean) {
 }
 
 export async function plannerMaterials(id: string, kind: "summary" | "studyGuide" | "flashcards" | "quiz") {
-  return req<{ ok: boolean; data: any }>(`${env.backend}/tasks/${encodeURIComponent(id)}/materials`, {
+  return req<{ ok: boolean; data: unknown }>(`${env.backend}/tasks/${encodeURIComponent(id)}/materials`, {
     method: "POST",
     headers: jsonHeaders({}),
     body: JSON.stringify({ kind })
@@ -1187,11 +1197,22 @@ export function connectPlannerStream(sid: string, onEvent: (ev: PlannerEvent) =>
   ws.onmessage = (m) => {
     try {
       const ev = JSON.parse(m.data as string)
-      onEvent(ev)
-    } catch { }
+      onEvent(ev as PlannerEvent)
+    } catch {
+      // Ignore malformed stream messages.
+    }
   }
   ws.onerror = () => { /* ignore for now */ }
-  return { ws, close: () => { try { ws.close() } catch { } } }
+  return {
+    ws,
+    close: () => {
+      try {
+        ws.close()
+      } catch {
+        // WebSocket may already be closed.
+      }
+    },
+  }
 }
 
 export async function plannerUpdate(id: string, patch: Partial<PlannerTask>) {
@@ -1218,7 +1239,7 @@ export async function plannerCreateWithFiles(data: { text?: string; title?: stri
     }
   }
 
-  return req<{ ok: boolean; task: PlannerTask & { files?: any[] } }>(`${env.backend}/tasks`, {
+  return req<{ ok: boolean; task: PlannerTask & { files?: PlannerFile[] } }>(`${env.backend}/tasks`, {
     method: "POST",
     body: formData,
     timeout: Math.max(env.timeout, 300000),
@@ -1231,7 +1252,7 @@ export async function plannerUploadFiles(taskId: string, files: File[]) {
     formData.append('file', file, file.name)
   }
 
-  return req<{ ok: boolean; files: any[] }>(`${env.backend}/tasks/${encodeURIComponent(taskId)}/files`, {
+  return req<{ ok: boolean; files: PlannerFile[] }>(`${env.backend}/tasks/${encodeURIComponent(taskId)}/files`, {
     method: "POST",
     body: formData,
     timeout: Math.max(env.timeout, 300000),
@@ -1291,6 +1312,10 @@ export type DebateSession = {
   }>;
   createdAt: number;
 }
+export type DebateSummary = Pick<DebateSession, "id" | "topic" | "position" | "createdAt"> & {
+  messageCount?: number;
+  updatedAt?: number;
+}
 
 export async function startDebate(topic: string, position: "for" | "against") {
   return req<DebateStartResponse>(`${env.backend}/debate/start`, {
@@ -1317,7 +1342,7 @@ export async function getDebateSession(debateId: string) {
 }
 
 export async function listDebates() {
-  return req<{ ok: boolean; debates: Array<any>; error?: string }>(`${env.backend}/debates`, {
+  return req<{ ok: boolean; debates: DebateSummary[]; error?: string }>(`${env.backend}/debates`, {
     method: "GET",
   })
 }
