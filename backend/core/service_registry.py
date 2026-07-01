@@ -1,9 +1,9 @@
-"""Service boundary registry for the current modular monolith.
+"""Service boundary registry for the current EduMind backend.
 
-The backend still runs as a single FastAPI process, but routes are grouped by
-the service that should eventually own them. Keeping this registry explicit
-lets us move one boundary at a time behind an API gateway without changing the
-public API contract.
+The repository is still a monorepo, but the default Docker Compose runtime
+starts these boundaries as separate service processes behind the API gateway.
+Keeping this registry explicit also preserves the local monolith compatibility
+mode without changing the public API contract.
 """
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ from api.routes import (
 
 @dataclass(frozen=True)
 class RouteMount:
-    """A router mounted by the modular monolith."""
+    """A router mounted by a backend service boundary."""
 
     router: APIRouter
     tag: str
@@ -45,7 +45,7 @@ class RouteMount:
 
 @dataclass(frozen=True)
 class ServiceBoundary:
-    """A future microservice boundary and its currently owned routes."""
+    """A microservice boundary and its owned routes."""
 
     name: str
     description: str

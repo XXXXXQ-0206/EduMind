@@ -1,389 +1,278 @@
-# EduMind（智教）——师生协同的 AI 全场景教育生态引擎
-E - Empowering (赋能师生协同)
+# EduMind（智教）
 
-D - Dynamic (动态生成教学资源)
-
-U - Understanding (理解学习过程)
-
-M - Multimodal (多模态内容转化)
-
-I - Interactive (交互式学习体验)
-
-N - Next-gen (下一代 AI 备课方案)
-
-D - Deep Knowledge (知识的深度转化)
-
-**师生协同的 AI 全场景教育生态引擎**
-
-
-
-标志设计 (The Icon)
+EduMind 是一个面向教师、学生和教研团队的 AI 教学与学习平台。当前默认运行形态是 Docker Compose 编排的微服务拓扑：源码仍采用 monorepo 管理，前端通过稳定的 API Gateway 访问既有业务路径，后端运行时拆为身份、学习内容、素材库、AI Core、媒体生成、教学内容、异步任务 worker 和 Bilibili Bridge 等服务。
 
 ![EduMind 标志](logo/logo.png)
 
-构型：采用双向链接 (Interlocking Link) 结构。
-寓意：左侧圆环代表“教师的教学导向”，右侧代表“学生的自主学习”，交织点象征 AI 实时连接教材与课堂，实现“灵动学习，刻骨铭心”。
-
-
-
-
-
-
-
-教师端与学生端核心功能均已实现，支持备课、授课与学习全流程。
-
-- **技术文档（面试向）**：实现细节、各功能技术方案与项目结构说明见 [knowledge.md](knowledge.md)，便于应对项目细节拷打。
-
----
-
 ## 当前状态
 
-- **教师端**：对话、文件库、bilibili视频备课、教案、教学幻灯片、教学视频、测验、试卷、教学记录汇 已全部打通
-- **学生端**：对话、智能笔记、测验、播客、知识卡片、错题本、学习记录汇、英语口语、学习袋、B站视频学习 等已实现
-- **账户体系**：已支持学生端 / 教师端登录注册、退出登录、修改密码、注销账户与未登录拦截
-- **数据隔离**：已取消“所有用户共享全局历史”的旧逻辑，改为按账户隔离查看与操作自己的数据
-- **前端**：Vue 3 + Vite + TypeScript + TailwindCSS
-- **后端**：Python FastAPI（`backend/`）
-- **适用对象**：教师、学生、教研团队的本地化 AI 教学与学习平台
-
----
-
-## 账户系统与数据隔离
-
-### 入口与使用方式
-
-- 点击首页的**学生端**或**教师端**后，会先进入统一的账户登录 / 注册页面
-- 登录成功后，系统会按入口角色跳转到对应工作区
-- 未登录状态下访问学生端或教师端业务页，会被自动重定向到 `/auth`
-
-### 当前支持的账户能力
-
-| 功能 | 说明 |
-|------|------|
-| **注册** | 用户名 + 密码创建本地账户，注册完成后自动登录 |
-| **登录** | 用户名 + 密码登录，登录成功后写入本地会话 |
-| **退出登录** | 清除当前会话，重新进入受保护页面时需再次登录 |
-| **修改密码** | 在“设置 -> 账户设置”中输入旧密码、新密码、确认新密码；修改成功后会强制退出并要求重新登录 |
-| **注销账户** | 仅可注销当前登录账户，需要先输入密码并进行二次确认；注销后该账户下的数据会一并删除 |
-
-### 数据库与存储方式
-
-- 账户、登录会话、聊天会话、聊天消息存储在本地 SQLite：`storage/edumind.sqlite3`
-- 用户表负责保存用户名、密码哈希、创建时间等基础信息
-- 会话表保存登录 token，用于前端登录态校验
-- 对话表与消息表通过 `user_id` 关联，实现每个账户只访问自己的聊天数据
-- 其他功能模块在本地存储层同样按 `owner / user_id` 做隔离，避免新账户继承旧账户历史
-
-### 核心隔离规则
-
-- 系统预置管理员账户：`admin1 / admin123`
-- `admin1` 会保留项目原有迁移过来的默认历史对话数据，作为默认演示账户
-- 新注册普通账户首次登录时，各功能页面默认应为空白状态
-- 每个账户只能查看、继续、删除自己的对话、资料和功能历史
-- 默认管理员账户 `admin1` 允许修改密码，但不允许注销，避免默认历史数据被误删
-
-### 相关前后端实现位置
-
-- 前端认证页：[frontend/src/pages/AuthPortal.vue](frontend/src/pages/AuthPortal.vue)
-- 前端账户设置弹窗：[frontend/src/components/AccountSettingsModal.vue](frontend/src/components/AccountSettingsModal.vue)
-- 前端登录态管理：[frontend/src/stores/auth.ts](frontend/src/stores/auth.ts)
-- 前端路由守卫：[frontend/src/router/index.ts](frontend/src/router/index.ts)
-- 后端认证接口：[backend/api/routes/auth.py](backend/api/routes/auth.py)
-- 后端 SQLite 账户与聊天库：[backend/utils/auth_db.py](backend/utils/auth_db.py)
-
----
-
-## 核心功能
-
-EduMind 将学习材料与备课资料转换为**交互式资源**，支持测验、闪卡、笔记、播客、教案、幻灯片与视频等，利用 LLM 与 TTS 提升教学与学习效率。
-
-### 教师端功能
-
-| 功能 | 说明 |
-|------|------|
-| **对话** | 围绕备课资料生成教案要点、测验题、板书与课堂互动提问，支持长短回复与多轮对话 |
-| **文件库** | 管理备课资料（上传、预览、删除），供对话、教案、幻灯片、视频、测验、试卷等复用 |
-| **教案** | 输入课题生成标准教案：三维目标、重难点、教学准备、教学过程、作业设计，可关联备课资料，支持 PDF 导出 |
-| **教学幻灯片** | 输入主题生成课程大纲与配图（DeepSeek 大纲 + 即梦 AI 配图），10/15/20 页可选，可基于备课资料，支持导出 PPTX |
-| **教学视频** | 输入主题生成讲解脚本与即梦文生视频，Edge TTS 配音并合成有声微课，支持备课资料联动与本地保存 |
-| **bilibili视频备课** | 通过 MCP 搜索 B站教学视频，按课题关键词检索并一键跳转视频页用于备课 |
-| **测验** | 生成课堂测验题（题干、选项、提示与解析），题型结构清晰、难度可调、题目数量可选，可基于备课资料 |
-| **试卷** | 生成多题型试卷（选择、填空、应用题），难度与题型数量可自定义，支持 PDF 导出 |
-| **教学记录汇** | 集中查看对话、教案、幻灯片、视频、测验、试卷历史，主题词云与教学趋势图表，左侧为教学记录概览 |
-
-### 学生端功能
-
-| 功能 | 说明 |
-|------|------|
-| **对话** | 基于学习资料总结、答疑与出题，支持长短回复与多轮对话，对话历史保存 |
-| **文件库** | 管理学习资料，供对话、笔记、测验等使用 |
-| **智能笔记** | 从主题或上传内容生成康奈尔风格笔记，支持 PDF 导出 |
-| **测验** | 生成题目并即时反馈对错与解析，难度与题数可调 |
-| **AI 播客** | 将主题或笔记转为对话式音频，TTS 合成，支持本地保存 |
-| **知识卡片** | 从主题或资料提取关键概念生成闪卡，便于复习 |
-| **错题本** | 收集错题、生成错题报告与巩固练习 |
-| **学习记录汇** | 集中查看对话、笔记、播客、测验、卡片历史，主题词云与学习趋势 |
-| **英语口语** | 跟读与评测（需配置讯飞等） |
-| **学习袋** | 收藏与统计学习内容 |
-| **B站视频学习** | 通过 MCP 搜索 B站学习视频，关键词检索并一键跳转视频页学习 |
-
-### 支持的 AI 能力
-
-- **LLM**：Google Gemini、OpenAI、Anthropic Claude、xAI Grok、Ollama（本地）、OpenRouter、DeepSeek 等
-- **嵌入**：OpenAI、Gemini、Ollama
-- **TTS**：Edge TTS、Google TTS、ElevenLabs（播客与教学视频配音）
-- **图像/视频**：即梦（火山引擎）用于幻灯片配图与教学视频画面（需配置相应 API）
-
----
+- 教师端：对话、文件库、Bilibili 视频备课、教案、幻灯片、教学视频、测验、试卷、教学记录汇已打通。
+- 学生端：对话、文件库、智能笔记、测验、播客、知识卡片、错题本、学习记录汇、英语口语、学习袋、B 站视频学习已打通。
+- 账户体系：支持学生端 / 教师端登录注册、退出登录、修改密码、注销账户与未登录拦截。
+- 数据隔离：账户、会话和业务历史按用户隔离，新注册账户默认为空白工作区。
+- 架构形态：Docker Compose 启动 API Gateway、6 个后端边界服务、异步生成 worker、Bilibili Bridge、PostgreSQL、Redis、MinIO 和前端 Nginx。
+- 协作方式：GitHub 仓库为 `https://github.com/XXXXXQ-0206/EduMind.git`，分支策略见 [Git/GitHub 协作指南](docs/development/GIT_COLLABORATION.md)。
 
 ## 技术栈
 
-| 组件 | 技术方案 |
-|------|----------|
-| 后端 | Python 3.10+、FastAPI、LangChain、LangGraph |
-| 前端 | Vue 3、Vite、TailwindCSS、TypeScript |
-| 数据存储 | SQLite（账户、会话、聊天与用户隔离）+ 本地文件 / JSON（功能内容与素材） |
-| AI/ML | 多 LLM 提供商、嵌入模型、LangGraph Agent |
-| 音频 | Edge TTS、Google TTS、ElevenLabs、FFmpeg |
-| 文档 | PyMuPDF、mammoth、python-docx、reportlab、python-pptx |
-| 部署 | Docker、Docker Compose（可选） |
+| 层级 | 技术 |
+|------|------|
+| 前端 | Vue 3、Vite、TypeScript、Pinia、Vue Router、TailwindCSS、Nginx |
+| 网关 | FastAPI API Gateway，保持旧 HTTP / WebSocket 路径兼容 |
+| 后端服务 | Python 3.11、FastAPI、Pydantic Settings、LangChain / LangGraph |
+| AI Core | 集中封装 Gemini、OpenAI、Claude、DeepSeek、OpenRouter、Ollama、Grok 等模型调用 |
+| 异步任务 | Redis 队列、任务租约、generation-worker、WebSocket 进度事件 |
+| 状态与文件 | PostgreSQL JSONB KV、Redis Pub/Sub、MinIO/S3 ObjectStore；本地开发仍支持 JSON / 文件系统回退 |
+| 媒体能力 | Edge TTS、Google TTS、ElevenLabs、FFmpeg、讯飞 ISE、即梦/火山引擎 |
+| Bilibili 能力 | Node.js Bridge + `@modelcontextprotocol/sdk` + `services/bilibili-mcp` |
+| 部署 | Docker Desktop / Docker Engine、Docker Compose |
 
----
+## 微服务拓扑
+
+```mermaid
+flowchart LR
+  Browser["浏览器 / Vue 前端"] --> Nginx["frontend / Nginx"]
+  Nginx --> Gateway["api-gateway :5000"]
+
+  Gateway --> Identity["identity :5101"]
+  Gateway --> Learning["learning-content :5102"]
+  Gateway --> Assets["asset-library :5103"]
+  Gateway --> Media["media-generation :5104"]
+  Gateway --> Teaching["teaching-content :5105"]
+  Gateway --> AICore["ai-core :5106"]
+
+  Learning --> Queue["Redis Task Queue"]
+  Media --> Queue
+  Teaching --> Queue
+  Queue --> Worker["generation-worker"]
+
+  Learning --> AICore
+  Media --> AICore
+  Teaching --> AICore
+  Worker --> AICore
+
+  Media --> BiliBridge["bilibili-bridge :5001"]
+  BiliBridge --> BiliMCP["services/bilibili-mcp"]
+
+  Identity --> Postgres["PostgreSQL"]
+  Learning --> Postgres
+  Assets --> Postgres
+  Media --> Postgres
+  Teaching --> Postgres
+  Worker --> Postgres
+
+  Assets --> MinIO["MinIO / S3"]
+  Media --> MinIO
+  Teaching --> MinIO
+  Worker --> MinIO
+  Learning --> Redis["Redis Pub/Sub"]
+  Media --> Redis
+  Teaching --> Redis
+```
+
+### 服务边界
+
+| 服务 | 职责 |
+|------|------|
+| `api-gateway` | 对外暴露兼容旧前端的 API 和 WebSocket 路径，代理到后端服务，并提供 `/health/ready` 聚合健康检查。 |
+| `identity` | 用户、会话、登录 token、注册、登录、修改密码、注销和内部 token 解析。 |
+| `learning-content` | 学生侧与通用学习工作流：对话、智能笔记、测验、知识卡片、错题本、学习记录、辩论、规划等。 |
+| `asset-library` | 文件上传、素材元数据、文件解析、转写入口和对象存储访问。 |
+| `ai-core` | 统一 LLM / Embedding 调用，集中管理模型供应商配置和内部调用接口。 |
+| `media-generation` | 播客、英语口语评测、TTS、Bilibili 搜索代理和媒体类供应商调用。 |
+| `teaching-content` | 教案、幻灯片、试卷、教学视频和教师侧内容生成。 |
+| `generation-worker` | 消费 Redis 队列，执行长耗时生成任务，失败重试并写入 dead-letter 队列。 |
+| `bilibili-bridge` | 独立 Node 服务，连接 `services/bilibili-mcp`，为后端提供 B 站视频搜索能力。 |
+| `postgres` / `redis` / `minio` | 微服务共享基础设施：状态、事件、任务队列和对象文件。 |
+
+说明：当前版本已经按服务边界多容器运行，但代码仓库仍是 monorepo，部分 Agent、工具函数和适配器继续共享。后续如果需要更强隔离，可以在现有边界上继续拆包、拆 schema 或拆独立仓库。
+
+更细的边界说明见 [backend-service-boundaries.md](docs/architecture/backend-service-boundaries.md)。
 
 ## 项目结构
 
-### 后端（Python FastAPI）
-
-```
-backend/
-├── main.py                 # FastAPI 入口
-├── config.py               # 配置（Pydantic Settings）
-├── api/routes/
-│   ├── auth.py             # 注册、登录、登出、修改密码、注销账户
-│   ├── chat.py             # 对话（教师/学生）
-│   ├── notes.py            # 智能笔记
-│   ├── quiz.py             # 测验
-│   ├── podcast.py          # 播客
-│   ├── flashcards.py       # 闪卡
-│   ├── lesson_plan.py      # 教案
-│   ├── slides.py           # 教学幻灯片
-│   ├── teaching_video.py    # 教学视频
-│   ├── paper.py             # 试卷
-│   ├── files.py            # 文件上传与管理
-│   ├── bilibili.py         # B站视频搜索（MCP Bridge 转发）
-│   └── speaking.py         # 英语口语
-├── services/
-│   ├── mcpManager.js       # MCP Client 管理（stdio 连接 bilibili-mcp-js）
-│   └── bilibiliBridgeServer.js # Node Bridge：/api/bilibili/search
-├── agents/
-│   ├── base.py
-│   ├── note_agent.py
-│   ├── quiz_agent.py
-│   ├── podcast_agent.py
-│   ├── lesson_plan_agent.py
-│   ├── slides_agent.py
-│   ├── teaching_video_agent.py
-│   ├── paper_agent.py
-│   └── ...
-└── utils/
-    ├── auth.py             # Bearer Token 解析与登录校验
-    ├── auth_db.py          # SQLite 用户、会话、聊天与消息存储
-    ├── llm.py
-    ├── tts.py
-    ├── parser.py
-    ├── storage.py
-    ├── websocket.py
-    └── jiemeng_video.py / jimeng_client.py  # 即梦 配图/视频
+```text
+EduMind/
+├── backend/                    # FastAPI 网关、服务应用、业务路由、Agent、基础设施适配器
+│   ├── core/                   # app factory、gateway、service registry、task dispatcher
+│   ├── infrastructure/         # KV、ObjectStore、EventBus、TaskQueue、TaskLease 适配器
+│   ├── api/routes/             # identity / learning / media / teaching 等边界路由
+│   ├── agents/                 # 教案、测验、播客、幻灯片、试卷、口语等 LLM Agent
+│   ├── services/               # Bilibili Bridge server 与 MCP manager
+│   ├── utils/                  # auth、storage、llm、tts、parser、live events、对象工具
+│   ├── gateway_app.py          # API Gateway 入口
+│   ├── service_app.py          # 单服务边界入口
+│   ├── worker_app.py           # 异步 worker 入口
+│   └── main.py                 # 本地单进程兼容入口
+├── frontend/                   # Vue 3 前端工程
+├── services/bilibili-mcp/      # Bilibili MCP Node 服务
+├── deploy/
+│   ├── docker/                 # 后端 / 前端 Dockerfile
+│   └── nginx.frontend.conf     # 前端 Nginx 配置
+├── docs/
+│   ├── architecture/           # 架构和服务边界文档
+│   ├── deployment/             # 部署与新机器环境配置说明
+│   └── development/            # Git/GitHub 协作说明
+├── scripts/                    # 启动、迁移、探针和配置脚本
+├── tests/backend/              # 后端服务边界、网关、基础设施适配器测试
+├── docker-compose.yml          # 当前微服务拓扑
+├── setup-edumind-environment.ps1
+├── start-edumind.ps1
+├── .env.example
+└── knowledge.md                # 面试 / 二开技术说明
 ```
 
-### 前端
+运行时目录 `storage/`、`models/`、`logs/`、`screenshots/` 不进入 Git；Docker Compose 会按需挂载或创建。
 
-```
-frontend/src/
-├── pages/
-│   ├── AuthPortal.vue      # 学生端 / 教师端统一登录注册页
-│   ├── Chat.vue            # 对话（教师 /teacher/chat、学生 /chat）
-│   ├── FileLibrary.vue     # 文件库
-│   ├── LessonPlan.vue      # 教案
-│   ├── Slides.vue          # 教学幻灯片
-│   ├── TeachingVideo.vue   # 教学视频
-│   ├── Quiz.vue            # 测验（教师 /teacher/quiz、学生 /quiz）
-│   ├── Paper.vue           # 试卷（教师）
-│   ├── TeachingRecords.vue # 教学记录汇
-│   ├── SmartNotes.vue      # 智能笔记
-│   ├── Podcast.vue         # 播客
-│   ├── KnowledgeCards.vue  # 知识卡片
-│   ├── LearningRecords.vue # 学习记录汇
-│   ├── WrongBook.vue       # 错题本
-│   ├── EnglishSpeaking.vue # 英语口语
-│   └── ...
-├── components/
-│   ├── Chat/               # 对话、Composer、Markdown 等
-│   ├── Sidebar.vue         # 导航（按教师/学生角色切换）
-│   ├── AccountSettingsModal.vue # 修改密码、注销账户
-│   └── ...
-├── stores/
-│   ├── auth.ts             # 登录态持久化与会话操作
-│   └── ...
-├── lib/                    # API、工具
-└── config/
+## 快速启动
+
+### 1. 新机器环境配置
+
+在 Windows 新机器上，先运行：
+
+```powershell
+.\setup-edumind-environment.ps1
 ```
 
----
+脚本会检查或安装 Git、Docker Desktop，创建 `.env`，校验 Compose 拓扑，并构建后端与前端镜像。执行完成后检查 `.env`，补入需要的 LLM、TTS、讯飞、即梦等密钥。
 
-## 快速开始
+只做检查：
 
-### 环境要求
-
-- Python 3.10+
-- Node.js 18+（前端）
-- ffmpeg（播客、教学视频音频）
-- 可选：即梦/火山引擎 API（幻灯片配图、教学视频画面）
-
-### 启动步骤
-
-```bash
-# 克隆项目
-git clone <repository-url>
-cd EduMind
-
-# 后端依赖 差什么包自己pip就行了
-pip install -r requirements.txt
-
-# B站 MCP Bridge（Node.js）依赖
-cd backend
-npm install
-cd ..
-
-# 编译 bilibili MCP server（首次或更新后执行）
-cd services/bilibili-mcp
-npm install
-npm run build
-cd ../..
-
-# 前端依赖
-cd frontend
-npm install
-cd ..
-
-# 环境配置
-cp .env.example .env
-# 编辑 .env：配置 LLM、TTS、即梦等密钥与 VITE_BACKEND_URL
-
-# 启动后端（项目根目录或 backend 目录）
-cd backend
-uvicorn main:app --host 0.0.0.0 --port 5000 --reload
-
-# 新终端启动前端
-cd frontend
-npm run dev
+```powershell
+.\setup-edumind-environment.ps1 -CheckOnly
 ```
 
-浏览器访问前端地址（如 `http://localhost:5173`）。侧栏可切换**教师** / **学生**角色，分别使用教师端与学生端功能。
+### 2. 启动服务
 
-首次体验可使用默认管理员账户：
+```powershell
+.\start-edumind.ps1
+```
 
-```bash
+如果需要重新构建镜像：
+
+```powershell
+.\start-edumind.ps1 -Build
+```
+
+查看关键日志：
+
+```powershell
+.\start-edumind.ps1 -Logs
+```
+
+启动后访问：
+
+- 前端：[http://localhost](http://localhost)
+- API Gateway：[http://localhost:5000](http://localhost:5000)
+- Gateway readiness：[http://localhost:5000/health/ready](http://localhost:5000/health/ready)
+- MinIO 控制台：[http://localhost:9001](http://localhost:9001)
+
+默认演示账户：
+
+```text
 username: admin1
 password: admin123
 ```
 
-说明：
+### 3. 常用 Docker 命令
 
-- `admin1` 保留项目已有的默认历史聊天数据
-- 新注册账户默认是空白工作区
-- 修改密码后需要重新登录
-- 注销账户会删除当前账户及其历史数据，且无法恢复
-
----
+```powershell
+docker compose ps
+docker compose logs -f api-gateway ai-core generation-worker bilibili-bridge
+docker compose down
+docker compose down -v   # 同时删除 PostgreSQL / MinIO volume，谨慎使用
+```
 
 ## 配置说明
 
-主要通过 `.env` 配置，关键项示例：
+主要配置文件是 `.env`，模板见 [.env.example](.env.example)。
 
 ### 服务与前端
 
-```bash
-HOST=0.0.0.0
-PORT=5000
+```env
 VITE_BACKEND_URL=http://localhost:5000
-VITE_FRONTEND_URL=http://localhost:5173
+VITE_TIMEOUT=90000
 ```
 
-### LLM
+前端容器由 Nginx 提供静态资源；浏览器只需要访问 API Gateway，不直接访问内部服务端口。
 
-```bash
-LLM_PROVIDER=gemini    # gemini | openai | claude | grok | ollama | openrouter | deepseek
+### AI 与模型
+
+```env
+LLM_PROVIDER=gemini
 EMB_PROVIDER=openai
 LLM_TEMP=1
 LLM_MAXTOK=16384
+LLM_EXECUTION_MODE=remote
+AI_CORE_URL=http://ai-core:5106
 ```
 
-### TTS（播客、教学视频）
+在微服务模式下，业务服务和 worker 默认通过 `ai-core` 调用模型；`ai-core` 自身使用本地 provider 配置。
 
-```bash
-TTS_PROVIDER=edge
-TTS_VOICE_EDGE=en-US-AvaNeural
+### 状态、对象与事件
+
+Docker Compose 默认使用：
+
+```env
+KV_STORE_PROVIDER=postgres
+OBJECT_STORE_PROVIDER=s3
+EVENT_BUS_PROVIDER=redis
+TASK_QUEUE_PROVIDER=redis
+TASK_LEASE_PROVIDER=redis
 ```
 
-### 即梦（幻灯片配图、教学视频）
+本地单进程开发可回退到 JSON / 本地文件 / inline runner，但多人协作和迁移机器时推荐使用 Docker Compose 默认拓扑。
 
-在 `.env` 中配置火山引擎/即梦相关变量（详见 `.env.example`），未配置则幻灯片可仅生成大纲无配图、教学视频可仅生成脚本与配音。
+### 即梦、TTS、讯飞和转写
 
-若教学视频日志出现 `code=50400` 或“没有权限调用即梦AI-视频生成能力”，说明当前 AK/SK 仅具备图像能力或未开通视频能力。可按以下方式处理：
+`.env.example` 中提供了 TTS、即梦/火山引擎、讯飞 ISE、转写 provider 等变量。未配置时，相关功能会降级：幻灯片可只生成大纲，教学视频可只生成脚本或配音前置内容。
 
-- 在火山引擎控制台为当前账号开通“即梦AI-视频生成”能力；
-- 或改用知识点视频生成智能体：在 `.env` 配置 `JIMENG_VIDEO_GATEWAY_API_KEY`，并设置 `JIMENG_VIDEO_PROVIDER=gateway`（或保持 `auto` 但确保 Gateway Key 已配置）。
+## 数据与迁移
 
-### Voice Transcription（语音转写）
+- PostgreSQL：保存 KV 状态、业务元数据和跨服务共享记录。
+- Redis：任务队列、进度事件、任务租约。
+- MinIO/S3：上传文件、PDF、音频、图片、视频等对象。
+- Identity 账户库：当前由 `identity` 服务持有，兼容存放在 `storage/edumind.sqlite3`；其他服务通过 `/auth/internal/resolve` 解析 token，不直接读取账户表。
+- `storage/`：本地开发兼容目录和部分挂载缓存，不应提交 Git。
 
-语音转写建议单独配置转写 provider，不要直接复用指向 DeepSeek 的 `OPENAI_BASE_URL`。
-`TRANSCRIPTION_PROVIDER` 与 `TRANSCRIPTION_OPENAI_*` 可单独指定转写模型、密钥与地址。
+旧本地 JSON / 文件数据可通过迁移脚本迁入适配器：
 
-完整选项见 [.env.example](.env.example)。
-
-### B站 MCP Bridge（视频学习）
-
-```bash
-# 可选：Node Bridge 地址（FastAPI 将转发到此地址）
-BILIBILI_BRIDGE_URL=http://127.0.0.1:5001
-
-# 可选：Bridge 端口（未设置时默认 5001）
-BILIBILI_BRIDGE_PORT=5001
-
-# 可选：bilibili-mcp-js dist 入口路径
-BILIBILI_MCP_ENTRY=services/bilibili-mcp/dist/index.js
+```powershell
+python scripts/migrate_storage_to_adapters.py --source-dir storage
+python scripts/migrate_storage_to_adapters.py --source-dir storage --write
 ```
 
----
+默认是 dry-run，确认报告无误后再加 `--write`。
 
-## 数据与存储
+## 开发与验证
 
-- **生成内容**：`storage/`
-  - `storage/smartnotes/` 笔记 PDF
-  - `storage/podcasts/` 播客音频
-  - `storage/slides/` 幻灯片与配图
-  - `storage/uploads/` 上传文件
-  - `storage/json/` JSON 数据库等
-- **会话与历史**：由后端 JSON/数据库持久化，对话、教案、测验、试卷等均支持历史查看与复用。
+后端基础检查：
 
----
+```powershell
+python -m compileall -q backend scripts tests
+python -m pytest tests/backend -q
+docker compose config --quiet
+```
 
-## 特性概览
+前端检查：
 
-- **双端完整**：教师端备课与授课、学生端学习与练习流程均可用
-- **流式输出**：WebSocket 支持对话、笔记、播客等流式生成
-- **多模型**：支持多 LLM、多 TTS，可本地 Ollama 部署
-- **模块化**：前后端分离，Agent 与路由清晰，便于扩展与二次开发
+```powershell
+cd frontend
+npm ci
+npm run lint
+npm run build
+```
 
----
+仓库已配置 `.githooks/`，提交前会阻止 `.env`、依赖目录、运行数据、IDE 配置、日志和未走 LFS 的大文件进入 Git，并执行基础质量检查。
 
-## 技术文档（面试 / 二次开发）
+## 相关文档
 
-详细的技术实现说明（教师端/学生端各功能实现、所用技术、项目文件夹与主要文件作用、常见面试追问简答）见 **[knowledge.md](knowledge.md)**。
+- [knowledge.md](knowledge.md)：架构、模块、关键实现与面试追问。
+- [backend-service-boundaries.md](docs/architecture/backend-service-boundaries.md)：后端服务边界和当前运行说明。
+- [ENVIRONMENT_SETUP_FOR_AGENTS.md](docs/deployment/ENVIRONMENT_SETUP_FOR_AGENTS.md)：新机器环境配置说明。
+- [DEPLOY_DOCKER_HUAWEI.md](docs/deployment/DEPLOY_DOCKER_HUAWEI.md)：Docker 部署参考。
+- [GIT_COLLABORATION.md](docs/development/GIT_COLLABORATION.md)：GitHub 协作流程。
 
----
+## 贡献
 
-## 许可证与贡献
-
-本项目为开源教育平台，教师端与学生端功能均已实现。使用与二次开发请遵循项目所声明的许可证。协作开发请先阅读 **[Git/GitHub 协作指南](docs/development/GIT_COLLABORATION.md)**，按 `main` / `develop` / `feature/*` 分支流程提交 Pull Request。
+协作开发请基于 `develop` 创建 `feature/*` 分支，通过 Pull Request 合入。提交前阅读 [Git/GitHub 协作指南](docs/development/GIT_COLLABORATION.md)，不要提交 `.env`、运行数据、日志、依赖目录或个人 IDE / agent 配置。

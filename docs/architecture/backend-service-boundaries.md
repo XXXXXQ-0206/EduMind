@@ -1,227 +1,145 @@
-# Backend Service Boundaries
+# EduMind 后端服务边界
 
-This document records the first step of the EduMind backend migration from a
-single FastAPI process toward independently deployable services. The current
-runtime remains a modular monolith: public HTTP and WebSocket routes are
-unchanged, but route ownership is now explicit in `backend/core/service_registry.py`.
+本文记录 EduMind 当前后端运行拓扑和服务边界。项目源码仍采用 monorepo 管理，但默认运行形态已经是 Docker Compose 微服务拓扑：API Gateway、6 个后端边界服务、异步生成 worker、独立 Bilibili Bridge、PostgreSQL、Redis、MinIO 和前端 Nginx 分容器运行。前端原有 HTTP / WebSocket 路径通过 Gateway 保持兼容。
 
-## Current Assembly
+## 当前装配
 
-`backend/main.py` now delegates application creation to `backend/core/app_factory.py`.
-The factory configures middleware, mounts `/storage`, registers public routes,
-and wires process lifecycle hooks through FastAPI lifespan handlers.
+后端镜像统一从 `deploy/docker/Dockerfile.backend` 构建，入口由 `scripts/start_backend_service.py` 根据 `BACKEND_ROLE` 决定：
 
-`backend/service_app.py` can run one boundary at a time when `SERVICE_NAME` is
-set. `backend/gateway_app.py` runs a compatibility API gateway that keeps the
-old frontend paths stable and proxies them to boundary services.
-
-`backend/core/lifespan.py` owns local process dependencies that must be removed
-or externalized during later service extraction:
-
-- SQLite auth database initialization.
-- Local Node.js Bilibili MCP bridge startup and shutdown for modular-monolith
-  developer mode only. Service-mode deployments use the independent
-  `bilibili-bridge` container.
-
-Authentication now supports two validation modes:
-
-- `AUTH_VALIDATION_MODE=local`: validate Bearer tokens against the local SQLite
-  auth database. This remains the default for the monolith and identity service.
-- `AUTH_VALIDATION_MODE=remote`: validate Bearer tokens through
-  `IDENTITY_URL/auth/internal/resolve`. Boundary services use this mode in
-  `docker-compose.yml`, which removes their direct dependency on auth table
-  reads while preserving the existing `require_auth` dependency.
-
-## Service Boundaries
-
-| Boundary | Current routes | Future ownership |
+| `BACKEND_ROLE` | 入口 | 用途 |
 | --- | --- | --- |
-| `identity` | `/auth/*` | Users, sessions, token validation, role-neutral account lifecycle. |
-| `learning-content` | `/chat`, `/smartnotes`, `/quiz`, `/flashcards`, `/api/companion/*`, `/exam`, `/debate`, `/tasks`, `/planner` | Student workflows, shared learning workflows, wrongbook, planner, debate, and chat history. |
-| `asset-library` | `/files`, `/transcriber` | Upload metadata, object storage, file parsing, transcription entrypoints. |
-| `ai-core` | `/ai/internal/invoke` | Internal LLM invocation, provider credentials, and centralized model access. |
-| `media-generation` | `/speaking`, `/podcast`, `/api/bilibili/search` | TTS, speech evaluation, podcast audio, Bilibili MCP search, media-facing provider calls. |
-| `teaching-content` | `/slides`, `/lesson-plan`, `/paper`, `/teaching-video` | Teacher workflows, slides, lesson plans, papers, teaching video orchestration. |
+| `gateway` | `backend/gateway_app.py` | 对外 API Gateway，端口 `5000`。 |
+| `service` | `backend/service_app.py` | 按 `SERVICE_NAME` 启动单个服务边界。 |
+| `worker` / `task-worker` | `backend/worker_app.py` | 消费 Redis 队列中的长耗时生成任务。 |
+| `monolith` 或未设置 | `backend/main.py` | 本地单进程兼容模式，仅用于排障和旧数据迁移。 |
 
-## Runtime Modes
+`backend/core/app_factory.py` 负责创建服务 app，统一配置中间件、生命周期、健康检查和路由挂载。`backend/core/service_registry.py` 记录服务边界和路由归属；`backend/core/gateway.py` 记录旧路径到目标服务的映射。
 
-The backend image uses `scripts/start_backend_service.py` and supports four
-roles:
+Docker Compose 默认启动以下后端角色：
 
-| `BACKEND_ROLE` | Entrypoint | Purpose |
+- `api-gateway`
+- `identity`
+- `learning-content`
+- `asset-library`
+- `ai-core`
+- `media-generation`
+- `teaching-content`
+- `generation-worker`
+- `bilibili-bridge`
+
+## 服务边界
+
+| 服务 | 当前路由 | 职责 |
 | --- | --- | --- |
-| `monolith` or unset | `main:app` | Legacy single-process backend. |
-| `gateway` | `gateway_app:app` | Public compatibility gateway on port `5000`. |
-| `service` | `service_app:app` | One service boundary selected by `SERVICE_NAME`. |
-| `worker` or `task-worker` | `worker_app:main` | Queue consumer for long-running generation tasks. |
+| `identity` | `/auth/*` | 用户、会话、登录 token、注册、登录、修改密码、注销账户和内部 token 解析。 |
+| `learning-content` | `/chat`、`/smartnotes`、`/quiz`、`/wrongbook`、`/flashcards`、`/api/companion/*`、`/exam`、`/debate`、`/tasks`、`/planner` | 学生侧和通用学习工作流，包括对话、笔记、测验、错题、学习记录、辩论和规划。 |
+| `asset-library` | `/files`、`/transcriber`、`/storage` | 文件上传、素材元数据、对象文件访问、文件解析和转写入口。 |
+| `ai-core` | `/ai/internal/invoke` | 内部 LLM / Embedding 调用，集中管理模型 provider、密钥和调用参数。 |
+| `media-generation` | `/speaking`、`/podcast`、`/api/bilibili/search` | TTS、播客、英语口语评测、Bilibili 搜索代理和媒体类供应商调用。 |
+| `teaching-content` | `/slides`、`/lesson-plan`、`/paper`、`/teaching-video` | 教案、幻灯片、试卷、教学视频和教师侧内容生成。 |
 
-The API gateway exposes three health-style endpoints:
+## Gateway 合同
 
-- `/health`: lightweight gateway status and configured upstream URLs.
-- `/health/live`: process liveness for the gateway itself.
-- `/health/ready`: readiness probe that calls each upstream service `/health`
-  endpoint and returns `503` when any boundary service is unhealthy or
-  unreachable. Docker Compose uses this endpoint for the gateway healthcheck.
+Gateway 对外提供：
 
-`docker-compose.yml` now runs the gateway plus six backend services
-(`identity`, `learning-content`, `asset-library`, `ai-core`,
-`media-generation`, and `teaching-content`), a `generation-worker`, and the
-independent `bilibili-bridge` Node service. Backend services still support the
-local `storage/` volume for development, but shared state and generated
-artifacts sit behind adapter interfaces. PostgreSQL, Redis, and MinIO services
-are included in Compose so deployments can run `KV_STORE_PROVIDER=postgres`,
-`EVENT_BUS_PROVIDER=redis`, `TASK_QUEUE_PROVIDER=redis`, and
-`OBJECT_STORE_PROVIDER=s3` without changing route code.
+- `/health`：返回 Gateway 进程状态和上游服务 URL。
+- `/health/live`：Gateway 存活检查。
+- `/health/ready`：聚合检查各后端服务 `/health`，任一服务不可用时返回 `503`。
 
-## Infrastructure Adapters
+HTTP 和 WebSocket 代理都使用最长前缀匹配。浏览器仍访问旧路径，例如 `/chat`、`/quiz`、`/lesson-plan`、`/api/bilibili/search`、`/ws/paper`；Gateway 负责把请求转发到对应服务。这样前端合同稳定，后端可以继续按边界演进。
 
-Shared state now has explicit adapter boundaries:
+## 身份与内部调用
 
-| Adapter | Config | Current provider | Next production provider |
+`identity` 服务持有账户和会话。当前账户库兼容使用 `storage/edumind.sqlite3`，便于保留已有本地用户数据；其他边界服务在 Compose 中运行 `AUTH_VALIDATION_MODE=remote`，通过 `IDENTITY_URL/auth/internal/resolve` 解析 Bearer token，不直接读取账户库。
+
+`ai-core` 是模型调用边界。业务服务和 worker 默认运行：
+
+```env
+LLM_EXECUTION_MODE=remote
+AI_CORE_URL=http://ai-core:5106
+```
+
+`ai-core` 自身运行 `LLM_EXECUTION_MODE=local`，由它直接读取 provider 配置并创建模型客户端。如果配置了 `INTERNAL_SERVICE_TOKEN`，内部接口会校验 `X-Internal-Service-Token`。
+
+## 基础设施适配器
+
+微服务化后，跨进程共享状态不再依赖单个 Python 进程内存或本地路径。项目抽出了以下适配器：
+
+| 能力 | 配置项 | Docker 默认 | 本地兼容 |
 | --- | --- | --- | --- |
-| Key-value state | `KV_STORE_PROVIDER` | `json` files under `storage/` | `postgres` provider using PostgreSQL JSONB, or dedicated state service |
-| Object files | `OBJECT_STORE_PROVIDER` | local filesystem under `storage/` | `s3` provider for S3/MinIO compatible object storage |
-| Task events | `EVENT_BUS_PROVIDER` | in-memory process bus | `redis` provider for cross-process Pub/Sub |
-| Task leases | `TASK_LEASE_PROVIDER` | KV-backed local lease | `redis` provider for atomic cross-process leases |
+| KV 状态 | `KV_STORE_PROVIDER` | `postgres`，使用 PostgreSQL JSONB | `json` |
+| 对象文件 | `OBJECT_STORE_PROVIDER` | `s3`，由 MinIO 提供 S3 兼容存储 | `local` |
+| 实时事件 | `EVENT_BUS_PROVIDER` | `redis` Pub/Sub | `memory` |
+| 任务队列 | `TASK_QUEUE_PROVIDER` | `redis` list 队列 | `inline` |
+| 任务租约 | `TASK_LEASE_PROVIDER` | `redis` | KV-backed lease |
 
-`utils.storage.JSONStorage` delegates get/set/delete/update operations through
-the KV adapter while keeping the existing API. Listing functions use KV prefix
-scans rather than direct `storage/*.json` globbing, so repository-backed
-providers can replace JSON files later. High-write list mutations such as file
-indexes, planner tasks, flashcards, speaking history, chat messages, quiz
-attempts, and debate indexes now use adapter-level atomic updates. The JSON
-provider serializes in-process updates per key and writes through atomic file
-replacement; the Redis provider uses WATCH/MULTI retries; the PostgreSQL
-provider stores records in `edumind_kv(key text primary key, value jsonb not
-null, updated_at timestamptz not null default now())` and serializes `update`
-operations with a transaction-scoped advisory lock plus row locking.
-`KV_STORE_PROVIDER=json` remains the single-process local default to preserve
-existing developer data, while Docker Compose defaults services to
-`KV_STORE_PROVIDER=postgres`.
+关键实现：
 
-`api/routes/files.py`, Planner attachments, Speaking recordings, Podcast audio,
-Smart Notes PDFs, lesson-plan PDFs, paper PDFs, slide images/downloads, and
-teaching-video local audio/video artifacts now write bytes through the
-object-store adapter and keep legacy response fields including `filename`,
-`url`, `static`, `file`, `localVideoUrl`, `localAudioUrl`, and download
-endpoints. ObjectStore supports `put_bytes`, `put_file`, `get_bytes`, deletion,
-prefix deletion, URL generation, and local cache path resolution for legacy
-parsers. Feature routes resolve uploaded materials through shared object-key
-helpers instead of building `storage/uploads` paths locally. `OBJECT_STORE_PROVIDER=local`
-remains the single-process local default, while Docker Compose defaults to the
-S3/MinIO provider with MinIO initialized as the shared bucket.
+- `backend/infrastructure/kv_store.py`：JSON、Redis、PostgreSQL KV provider。
+- `backend/infrastructure/object_store.py`：本地文件与 S3/MinIO provider。
+- `backend/infrastructure/event_bus.py`：内存事件与 Redis Pub/Sub。
+- `backend/infrastructure/task_queue.py`：inline 与 Redis 队列。
+- `backend/infrastructure/task_lease.py`：长任务租约，避免重复执行。
+- `backend/utils/storage.py`：保留旧 JSONStorage API，底层改走 KV adapter。
+- `backend/utils/live_events.py`：统一发布 WebSocket 进度事件。
 
-Live WebSocket streams for Chat, Smart Notes, Quiz, Planner, Exam, Paper,
-Teaching Video, and Debate now publish through `utils.live_events`, which is
-backed by the configured event bus. The old process-local connection manager is
-no longer referenced by route modules.
+## 长耗时任务
 
-Long-running generators now use `infrastructure.task_lease` for cross-process
-de-duplication. Chat, Smart Notes, Quiz, Exam, Paper, Podcast, and Teaching
-Video have runner-style execution paths: HTTP create endpoints persist request
-state and trigger or enqueue a lease-guarded runner, while WebSocket endpoints
-validate access, replay cached state, and subscribe to EventBus. Podcast
-generation no longer runs inside `/ws/podcast`; the socket now receives durable
-script/audio snapshots plus live events published by the worker. Debate also
-uses lease-guarded background tasks for AI replies and analysis. Docker Compose
-defaults task leases, live events, and runner dispatch to Redis for the
-multi-service topology while preserving inline fallbacks for single-process
-development.
+Chat、Smart Notes、Quiz、Exam、Paper、Podcast、Teaching Video 等生成流程已经改为 runner + queue 模式：
 
-Runner dispatch is behind `core.task_dispatcher` and
-`infrastructure.task_queue`. `TASK_QUEUE_PROVIDER=inline` starts local runners
-inside the API process, which is the local development default.
-`TASK_QUEUE_PROVIDER=redis` writes retry-aware `{kind, id, attempts,
-max_attempts}` envelopes to `TASK_QUEUE_NAME`. The Redis adapter atomically
-moves tasks from the pending list to `TASK_QUEUE_NAME:processing` with
-`BRPOPLPUSH`, acknowledges successful work with `LREM`, retries failed work
-with incremented attempts, and writes exhausted tasks to
-`TASK_QUEUE_NAME:dead`. `backend/worker_app.py` consumes queued work and imports
-the route modules that register awaited handlers for `chat`, `smartnotes`,
-`quiz`, `exam`, `paper`, `podcast`, and `teaching_video`. Compose includes a
-`generation-worker` service for queued work.
+1. HTTP 创建任务并持久化初始状态。
+2. `core.task_dispatcher` 写入 Redis 队列。
+3. `generation-worker` 消费任务，获取租约，调用对应 runner。
+4. runner 通过 `ai-core` 调模型，通过 ObjectStore 保存文件，通过 EventBus 发布进度。
+5. WebSocket 只负责订阅和回放进度，不再承担任务执行本身。
 
-LLM calls are centralized through the `ai-core` boundary. Business services and
-the worker can run with `LLM_EXECUTION_MODE=remote` and `AI_CORE_URL` pointing to
-`http://ai-core:5106`, while the `ai-core` service itself uses
-`LLM_EXECUTION_MODE=local` and owns direct provider calls. If
-`INTERNAL_SERVICE_TOKEN` is configured, `/ai/internal/invoke` requires
-`X-Internal-Service-Token`.
+Redis 队列使用 `{kind, id, attempts, max_attempts}` envelope。消费失败会按次数重试，超过上限后写入 dead-letter 队列。
 
-Legacy local data can be migrated through
-`scripts/migrate_storage_to_adapters.py`. The command is dry-run by default and
-prints a JSON report:
+## Bilibili Bridge
+
+Bilibili MCP 是 Node/TypeScript 生态，当前独立为 `bilibili-bridge` 容器。`media-generation` 通过 `BILIBILI_BRIDGE_URL=http://bilibili-bridge:5001` 调用 Bridge；Bridge 再通过 stdio 连接 `/app/services/bilibili-mcp/dist/index.js`。
+
+本地 `monolith` 调试模式仍可由 lifespan 启动本地 Bridge，但 Docker Compose 不使用这种路径。
+
+## 数据迁移
+
+旧本地 JSON / 文件数据可通过迁移脚本导入当前适配器：
 
 ```powershell
 python scripts/migrate_storage_to_adapters.py --source-dir storage
-```
-
-After configuring `KV_STORE_PROVIDER` and `OBJECT_STORE_PROVIDER` for the
-target deployment, pass `--write` to copy restored KV records and artifact files
-through the same adapters used by the services:
-
-```powershell
 python scripts/migrate_storage_to_adapters.py --source-dir storage --write
 ```
 
-## Migration Rules
+默认 dry-run，只输出迁移报告；确认无误后再加 `--write`。目标 provider 由当前环境变量决定，例如 `KV_STORE_PROVIDER=postgres`、`OBJECT_STORE_PROVIDER=s3`。
 
-1. Keep the public frontend contract stable until the gateway can proxy old
-   paths to extracted services.
-2. Move state behind repositories before moving route handlers into separate
-   processes.
-3. Replace local JSON files with a service-owned database model before scaling
-   a service horizontally.
-4. Replace local filesystem paths with object IDs or signed URLs before moving
-   media generation into workers.
-5. Treat WebSocket progress streams as a gateway concern backed by Redis Pub/Sub
-   or a message broker, not as direct worker connections.
+## 当前边界状态
 
-## Extraction Status
+已完成：
 
-1. `identity`: keep account/session mutations isolated in the identity service;
-   boundary services validate tokens remotely through `/auth/internal/resolve`.
-2. `asset-library`: owns upload metadata and object storage. Existing feature
-   routes keep legacy file fields but resolve material text by object key.
-3. `ai-core`: owns LLM provider invocation and isolates provider credentials
-   from feature services through `/ai/internal/invoke`.
-4. `media-generation`: owns TTS, speech evaluation, Podcast, Speaking
-   artifacts, and the `/api/bilibili/search` proxy. The actual Bilibili MCP
-   process runs as the independent `bilibili-bridge` Node service in Compose.
-5. `learning-content` and `teaching-content`: own their KV records and publish
-   progress through EventBus. Long-running generation work now moves through
-   the queue-backed worker boundary, and websocket delivery no longer depends
-   on process-local connection tables.
+- 服务化 app factory、service registry 和 Gateway 路由。
+- Gateway readiness 聚合健康检查。
+- 远程 token 解析和边界服务 remote auth。
+- AI Core 内部调用边界。
+- PostgreSQL KV、MinIO ObjectStore、Redis EventBus、Redis TaskQueue 和 Redis TaskLease。
+- 长任务 worker、ack/retry/dead-letter 语义。
+- 独立 Bilibili Bridge。
+- dry-run-first 存储迁移工具。
 
-## Remaining Operational Work
+仍需后续演进：
 
-- `utils.auth_db` still uses SQLite for identity-owned account/session state in
-  local mode. Lightweight auth contracts live in `utils.auth_contracts`, and
-  boundary routes import those contracts instead of importing the SQLite module
-  for type hints. `utils.auth` lazy-loads the local auth store only when token
-  validation runs in local mode; boundary services should run with
-  `AUTH_VALIDATION_MODE=remote` and resolve users through the identity service.
-- Local JSON and filesystem storage remain available for developer mode.
-  Production rollout should run the dry-run migration report first, then run
-  `scripts/migrate_storage_to_adapters.py --write` against the configured
-  PostgreSQL and MinIO/S3 providers before switching an existing deployment.
-- Some media utilities still use local working files while generating PDFs,
-  PPTX, TTS audio, or videos. Final upload/download paths now go through
-  ObjectStore, and S3 path caching supports parsers that still require a local
-  file.
-- User-facing long-running workflows now have a queue-backed worker boundary in
-  Compose with acknowledgment, retry, and dead-letter semantics. A later scale
-  upgrade can swap the adapter to Redis Streams, Celery, Dramatiq, or a cloud
-  queue without changing route code.
+- `identity` 的账户/会话库仍兼容使用 SQLite；生产化可迁到独立 PostgreSQL schema。
+- 代码仓库仍是 monorepo，部分 Agent、工具函数和适配器共享；如需团队级隔离，可继续拆 package 或独立仓库。
+- 部分 PDF、PPTX、TTS、视频生成过程仍会使用本地临时文件；最终对象已通过 ObjectStore 暴露。
+- 当前 Redis list 队列适合本项目规模；更大规模可替换为 Redis Streams、Celery、Dramatiq 或云队列。
 
-The critical migration boundaries are now implemented: service-scoped apps,
-gateway routing, remote auth validation, AI Core, PostgreSQL KV, shared
-ObjectStore adapters, Redis Pub/Sub progress streams, queue-backed generation
-workers with ack/retry/DLQ handling, independent Bilibili Bridge, gateway
-readiness, and dry-run-first storage migration tooling.
+## 验证
 
-## Verification
+服务边界、Gateway 路由和基础设施合同由 `tests/backend/` 覆盖。常用检查：
 
-The route and gateway contracts are guarded by `tests/backend/test_app_factory.py`.
-Any change to route registration or gateway routing should update the test
-intentionally.
+```powershell
+docker compose config --quiet
+python -m compileall -q backend scripts tests
+python -m pytest tests/backend -q
+```
+
+任何路由归属、Gateway 前缀或适配器合同变更，都应同步更新测试和本文档。
