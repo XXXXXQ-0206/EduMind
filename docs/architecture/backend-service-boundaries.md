@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | `gateway` | `backend/gateway_app.py` | 对外 API Gateway，端口 `5000`。 |
 | `service` | `backend/service_app.py` | 按 `SERVICE_NAME` 启动单个服务边界。 |
-| `worker` / `task-worker` | `backend/worker_app.py` | 消费 Redis 队列中的长耗时生成任务。 |
+| `worker` / `task-worker` | `scripts/start_backend_service.py` 内部选择 Celery worker 或 `backend/worker_app.py` | 消费长耗时生成任务；Docker 默认使用 Celery + Redis。 |
 | `monolith` 或未设置 | `backend/main.py` | 本地单进程兼容模式，仅用于排障和旧数据迁移。 |
 
 `backend/core/app_factory.py` 负责创建服务 app，统一配置中间件、生命周期、健康检查和路由挂载。`backend/core/service_registry.py` 记录服务边界和路由归属；`backend/core/gateway.py` 记录旧路径到目标服务的映射。
@@ -70,7 +70,7 @@ AI_CORE_URL=http://ai-core:5106
 | KV 状态 | `KV_STORE_PROVIDER` | `postgres`，使用 PostgreSQL JSONB | `json` |
 | 对象文件 | `OBJECT_STORE_PROVIDER` | `s3`，由 MinIO 提供 S3 兼容存储 | `local` |
 | 实时事件 | `EVENT_BUS_PROVIDER` | `redis` Pub/Sub | `memory` |
-| 任务队列 | `TASK_QUEUE_PROVIDER` | `redis` list 队列 | `inline` |
+| 任务队列 | `TASK_QUEUE_PROVIDER` | `celery`，Redis 作为 broker/result backend | `inline` |
 | 任务租约 | `TASK_LEASE_PROVIDER` | `redis` | KV-backed lease |
 
 关键实现：
@@ -78,7 +78,8 @@ AI_CORE_URL=http://ai-core:5106
 - `backend/infrastructure/kv_store.py`：JSON、Redis、PostgreSQL KV provider。
 - `backend/infrastructure/object_store.py`：本地文件与 S3/MinIO provider。
 - `backend/infrastructure/event_bus.py`：内存事件与 Redis Pub/Sub。
-- `backend/infrastructure/task_queue.py`：inline 与 Redis 队列。
+- `backend/infrastructure/task_queue.py`：inline 与旧 Redis list 队列兼容实现。
+- `backend/core/celery_app.py`、`backend/core/celery_tasks.py`：Celery app 与统一生成任务入口。
 - `backend/infrastructure/task_lease.py`：长任务租约，避免重复执行。
 - `backend/utils/storage.py`：保留旧 JSONStorage API，底层改走 KV adapter。
 - `backend/utils/live_events.py`：统一发布 WebSocket 进度事件。
@@ -88,12 +89,12 @@ AI_CORE_URL=http://ai-core:5106
 Chat、Smart Notes、Quiz、Exam、Paper、Podcast、Teaching Video 等生成流程已经改为 runner + queue 模式：
 
 1. HTTP 创建任务并持久化初始状态。
-2. `core.task_dispatcher` 写入 Redis 队列。
-3. `generation-worker` 消费任务，获取租约，调用对应 runner。
+2. `core.task_dispatcher` 发布 Celery 任务。
+3. `generation-worker` 从 Redis broker 消费 Celery 任务，获取租约，调用对应 runner。
 4. runner 通过 `ai-core` 调模型，通过 ObjectStore 保存文件，通过 EventBus 发布进度。
 5. WebSocket 只负责订阅和回放进度，不再承担任务执行本身。
 
-Redis 队列使用 `{kind, id, attempts, max_attempts}` envelope。消费失败会按次数重试，超过上限后写入 dead-letter 队列。
+Celery 任务使用统一入口 `edumind.generation.run(kind, task_id)`。Redis 仍承担 broker、result backend、进度 Pub/Sub 和任务租约；旧 Redis list 队列实现保留为排障和回滚兼容路径。
 
 ## Bilibili Bridge
 
@@ -130,7 +131,7 @@ python scripts/migrate_storage_to_adapters.py --source-dir storage --write
 - `identity` 的账户/会话库仍兼容使用 SQLite；生产化可迁到独立 PostgreSQL schema。
 - 代码仓库仍是 monorepo，部分 Agent、工具函数和适配器共享；如需团队级隔离，可继续拆 package 或独立仓库。
 - 部分 PDF、PPTX、TTS、视频生成过程仍会使用本地临时文件；最终对象已通过 ObjectStore 暴露。
-- 当前 Redis list 队列适合本项目规模；更大规模可替换为 Redis Streams、Celery、Dramatiq 或云队列。
+- 当前 Celery + Redis 适合本项目规模；更大规模可按业务类型拆分 Celery 队列、worker 池或替换为云队列。
 
 ## 验证
 

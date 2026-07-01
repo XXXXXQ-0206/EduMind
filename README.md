@@ -41,7 +41,7 @@ flowchart LR
   Gateway --> Teaching["teaching-content :5105"]
   Gateway --> AICore["ai-core :5106"]
 
-  Learning --> Queue["Redis Task Queue"]
+  Learning --> Queue["Celery Queue on Redis"]
   Media --> Queue
   Teaching --> Queue
   Queue --> Worker["generation-worker"]
@@ -81,7 +81,7 @@ flowchart LR
 | `ai-core` | 统一 LLM / Embedding 调用，集中管理模型供应商配置和内部调用接口。 |
 | `media-generation` | 播客、英语口语评测、TTS、Bilibili 搜索代理和媒体类供应商调用。 |
 | `teaching-content` | 教案、幻灯片、试卷、教学视频和教师侧内容生成。 |
-| `generation-worker` | 消费 Redis 队列，执行长耗时生成任务，失败重试并写入 dead-letter 队列。 |
+| `generation-worker` | 作为 Celery worker 消费 Redis broker 中的长耗时生成任务，执行失败时按 Celery 策略重试。 |
 | `bilibili-bridge` | 独立 Node 服务，连接 `services/bilibili-mcp`，为后端提供 B 站视频搜索能力。 |
 | `postgres` / `redis` / `minio` | 微服务共享基础设施：状态、事件、任务队列和对象文件。 |
 
@@ -148,10 +148,12 @@ EduMind/
 .\start-edumind.ps1
 ```
 
-如果需要重新构建镜像：
+`start-edumind.ps1` 默认会刷新后端和前端镜像，避免合并代码后仍运行旧镜像。Docker build 会使用缓存，通常不会重复安装全部依赖。
+
+如果只想复用已有镜像快速拉起：
 
 ```powershell
-.\start-edumind.ps1 -Build
+.\start-edumind.ps1 -SkipBuild
 ```
 
 查看关键日志：
@@ -217,7 +219,7 @@ Docker Compose 默认使用：
 KV_STORE_PROVIDER=postgres
 OBJECT_STORE_PROVIDER=s3
 EVENT_BUS_PROVIDER=redis
-TASK_QUEUE_PROVIDER=redis
+TASK_QUEUE_PROVIDER=celery
 TASK_LEASE_PROVIDER=redis
 ```
 

@@ -29,7 +29,7 @@ Browser
       -> ai-core(:5106)
 
 Long-running tasks
-  -> Redis queue
+  -> Celery queue on Redis
   -> generation-worker
 
 Media search
@@ -54,7 +54,7 @@ Shared infrastructure
 | `ai-core` | 统一模型调用入口，集中管理 LLM / Embedding provider 和内部鉴权。 |
 | `media-generation` | 播客、TTS、英语口语评测、Bilibili 搜索代理和媒体能力。 |
 | `teaching-content` | 教案、幻灯片、试卷、教学视频和教师内容生成。 |
-| `generation-worker` | 消费 Redis 任务队列，执行长耗时生成任务，支持 ack、retry、dead-letter。 |
+| `generation-worker` | 作为 Celery worker 消费 Redis broker 中的长耗时生成任务，支持确认、重试和独立扩容。 |
 | `bilibili-bridge` | Node 服务，通过 MCP stdio 连接 `services/bilibili-mcp` 并提供 HTTP 检索接口。 |
 
 ### 2.3 运行模式
@@ -65,7 +65,7 @@ Shared infrastructure
 |----------------|------|------|
 | `gateway` | `backend/gateway_app.py` | API Gateway，对外端口 5000。 |
 | `service` | `backend/service_app.py` | 按 `SERVICE_NAME` 启动一个服务边界。 |
-| `worker` / `task-worker` | `backend/worker_app.py` | 消费异步任务队列。 |
+| `worker` / `task-worker` | `scripts/start_backend_service.py` 内部选择 Celery worker 或 `backend/worker_app.py` | 消费异步任务队列。 |
 | `monolith` 或未设置 | `backend/main.py` | 本地单进程兼容模式，便于排障，不是推荐部署形态。 |
 
 微服务部署使用 `gateway`、`service` 和 `worker` 三类角色；`monolith` 只保留给本地排障和兼容旧数据迁移，不作为日常启动方式。
@@ -79,7 +79,7 @@ Shared infrastructure
 | KV 状态 | `KV_STORE_PROVIDER` | `postgres` | `json` |
 | 对象文件 | `OBJECT_STORE_PROVIDER` | `s3` / MinIO | `local` |
 | 实时事件 | `EVENT_BUS_PROVIDER` | `redis` | `memory` |
-| 任务队列 | `TASK_QUEUE_PROVIDER` | `redis` | `inline` |
+| 任务队列 | `TASK_QUEUE_PROVIDER` | `celery`，Redis 作为 broker/result backend | `inline` |
 | 任务租约 | `TASK_LEASE_PROVIDER` | `redis` | KV-backed lease |
 
 关键代码：
@@ -87,7 +87,8 @@ Shared infrastructure
 - `backend/infrastructure/kv_store.py`：JSON 文件、PostgreSQL JSONB KV。
 - `backend/infrastructure/object_store.py`：本地文件和 S3/MinIO 对象存储。
 - `backend/infrastructure/event_bus.py`：内存事件和 Redis Pub/Sub。
-- `backend/infrastructure/task_queue.py`：inline 队列和 Redis 队列。
+- `backend/infrastructure/task_queue.py`：inline 与旧 Redis list 队列兼容实现。
+- `backend/core/celery_app.py`、`backend/core/celery_tasks.py`：Celery app 与统一生成任务入口。
 - `backend/infrastructure/task_lease.py`：避免同一生成任务被重复执行。
 - `backend/utils/storage.py`：保留原有业务存储 API，底层改走 KV adapter。
 - `backend/utils/live_events.py`：统一发布 WebSocket 进度事件。
@@ -110,8 +111,8 @@ Shared infrastructure
 
 1. 前端通过 HTTP 创建任务。
 2. 业务服务持久化任务请求和初始状态。
-3. `core.task_dispatcher` 将任务放入 Redis 队列，或在本地模式 inline 执行。
-4. `generation-worker` 消费任务，拿任务租约，调用业务 runner。
+3. `core.task_dispatcher` 将任务发布到 Celery，或在本地模式 inline 执行。
+4. `generation-worker` 从 Redis broker 消费 Celery 任务，拿任务租约，调用业务 runner。
 5. runner 通过 `ai-core` 调 LLM，通过 ObjectStore 写文件，通过 EventBus 发进度。
 6. 前端 WebSocket 订阅任务进度；断线重连时可读取已缓存状态。
 
@@ -290,6 +291,6 @@ python scripts/migrate_storage_to_adapters.py --source-dir storage --write
 
 - 为各服务拆独立 Python package 或独立仓库。
 - 为 identity、learning、teaching、media 建更明确的数据库 schema。
-- 用 Redis Streams、Celery、Dramatiq 或云队列替换当前 Redis list 队列。
+- 按业务类型拆分 Celery 队列，例如视频、播客、试卷使用不同 worker 池。
 - 给 Gateway 增加更完整的鉴权、限流、请求追踪和结构化日志。
 - 将 GitHub Actions 拆成后端、前端、Docker 镜像构建和部署流水线。

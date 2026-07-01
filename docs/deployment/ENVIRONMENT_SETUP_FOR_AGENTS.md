@@ -29,7 +29,7 @@ C:\Users\<user>\Desktop\EduMind
 
 `setup-edumind-environment.ps1` 用于新机器配置：检查或安装 Git、Docker Desktop，启动 Docker daemon，创建 `.env`，校验 Compose 拓扑，并构建后端和前端镜像。
 
-`start-edumind.ps1` 用于日常启动：假设环境配置已经完成，负责启动 Docker Desktop 和完整 Docker Compose 微服务拓扑，默认不重新构建镜像。
+`start-edumind.ps1` 用于日常启动：假设环境配置已经完成，负责启动 Docker Desktop 和完整 Docker Compose 微服务拓扑，并默认刷新后端与前端镜像，避免合并代码后仍运行旧镜像。
 
 ## 主机依赖
 
@@ -122,7 +122,7 @@ KV_STORE_PROVIDER=postgres
 POSTGRES_DSN=postgresql://edumind:edumind@postgres:5432/edumind
 OBJECT_STORE_PROVIDER=s3
 EVENT_BUS_PROVIDER=redis
-TASK_QUEUE_PROVIDER=redis
+TASK_QUEUE_PROVIDER=celery
 TASK_LEASE_PROVIDER=redis
 AI_CORE_URL=http://ai-core:5106
 BILIBILI_BRIDGE_URL=http://bilibili-bridge:5001
@@ -154,10 +154,10 @@ BILIBILI_BRIDGE_URL=http://bilibili-bridge:5001
 .\start-edumind.ps1
 ```
 
-启动时强制重新构建镜像：
+日常启动默认会刷新镜像。若只想复用已有镜像快速启动：
 
 ```powershell
-.\start-edumind.ps1 -Build
+.\start-edumind.ps1 -SkipBuild
 ```
 
 启动并跟随关键日志：
@@ -212,10 +212,10 @@ Compose 创建命名卷：
 - `api-gateway` 保持旧前端路径兼容。
 - `identity` 持有账户和会话；其他服务远程解析 token。
 - `ai-core` 负责直接调用 LLM / Embedding provider。
-- `generation-worker` 消费 Redis 队列中的长任务。
+- `generation-worker` 作为 Celery worker 消费 Redis broker 中的长任务。
 - `bilibili-bridge` 是独立 Node 服务，连接 `services/bilibili-mcp`。
 - PostgreSQL 保存 KV JSONB 状态。
-- Redis 处理事件、租约和任务队列。
+- Redis 处理 Celery broker/result backend、事件和租约。
 - MinIO 保存上传文件和生成对象。
 
 不要把 `backend\main.py` 当作新机器的主启动方式。它只保留给本地排障和兼容旧数据迁移。

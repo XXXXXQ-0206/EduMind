@@ -1,6 +1,7 @@
 param(
     [switch]$CheckOnly,
     [switch]$Build,
+    [switch]$SkipBuild,
     [switch]$Logs,
     [int]$DockerTimeoutSeconds = 180
 )
@@ -22,9 +23,22 @@ function Find-DockerCli {
         return $command.Source
     }
 
-    $candidate = Join-Path $env:ProgramFiles "Docker\Docker\resources\bin\docker.exe"
-    if ($candidate -and (Test-Path -LiteralPath $candidate)) {
-        return $candidate
+    $candidates = @()
+    if ($env:ProgramFiles) {
+        $candidates += (Join-Path $env:ProgramFiles "Docker\Docker\resources\bin\docker.exe")
+    }
+    if (${env:ProgramFiles(x86)}) {
+        $candidates += (Join-Path ${env:ProgramFiles(x86)} "Docker\Docker\resources\bin\docker.exe")
+    }
+
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+            $dockerCliDir = Split-Path -Parent $candidate
+            if ($env:Path -notlike "*$dockerCliDir*") {
+                $env:Path = "$dockerCliDir;$env:Path"
+            }
+            return $candidate
+        }
     }
 
     return $null
@@ -112,27 +126,63 @@ function Invoke-ComposePlainBuild {
 }
 
 function Build-ProjectImages {
-    Write-Host "[BUILD] Backend image"
+    Write-Host "[BUILD] Shared backend image"
     Invoke-ComposePlainBuild @("api-gateway")
 
-    $frontendImage = & $script:DockerExe image inspect "edumind-frontend:latest" 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[BUILD] Frontend image"
-        Invoke-ComposePlainBuild @("frontend")
-    } else {
-        Write-Host "[OK] Frontend image already exists."
+    Write-Host "[BUILD] Frontend image"
+    Invoke-ComposePlainBuild @("frontend")
+}
+
+function Read-EnvValue {
+    param(
+        [string]$Path,
+        [string]$Name
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith("#")) {
+            continue
+        }
+
+        $parts = $trimmed -split "=", 2
+        if ($parts.Count -eq 2 -and $parts[0].Trim() -eq $Name) {
+            return $parts[1].Trim().Trim('"').Trim("'")
+        }
+    }
+
+    return $null
+}
+
+function Warn-EnvCompatibility {
+    $provider = Read-EnvValue -Path $EnvFile -Name "TASK_QUEUE_PROVIDER"
+    if ($provider -and $provider.ToLowerInvariant() -ne "celery") {
+        Write-Host "[WARN] .env sets TASK_QUEUE_PROVIDER=$provider. The current Docker topology defaults to Celery + Redis."
+        Write-Host "[WARN] Use TASK_QUEUE_PROVIDER=celery for the current production-like startup path."
     }
 }
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $AppDir = $Root
 $EnvFile = Join-Path $AppDir ".env"
+$ShouldBuildImages = -not $SkipBuild
+
+if ($Build -and $SkipBuild) {
+    throw "Use either -Build or -SkipBuild, not both."
+}
 
 Write-Section "EduMind quick start"
 Write-Host "Workspace: $Root"
 Write-Host "Assumption: setup-edumind-environment.ps1 has already completed."
 Write-Host "Check only: $CheckOnly"
-Write-Host "Build images during start: $Build"
+Write-Host "Refresh Docker images: $ShouldBuildImages"
+if ($Build) {
+    Write-Host "[INFO] -Build is kept for compatibility; image refresh is now the default."
+}
 
 $script:DockerExe = Find-DockerCli
 if (-not $script:DockerExe) {
@@ -150,6 +200,8 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Docker Compose plugin is not available. Run .\setup-edumind-environment.ps1 first."
     }
+
+    Warn-EnvCompatibility
 
     if ($CheckOnly) {
         if (Test-DockerDaemon) {
@@ -176,10 +228,17 @@ try {
 
     Write-Host ""
     Write-Host "[START] Docker Compose microservices"
-    if ($Build) {
+    if ($ShouldBuildImages) {
         Build-ProjectImages
+    } else {
+        Write-Host "[SKIP] Docker image build. Existing local images will be reused."
     }
-    Invoke-Compose @("up", "-d", "--no-build")
+
+    $upArgs = @("up", "-d", "--remove-orphans")
+    if ($SkipBuild) {
+        $upArgs += "--no-build"
+    }
+    Invoke-Compose $upArgs
 
     Write-Host ""
     Write-Host "[STATUS]"
