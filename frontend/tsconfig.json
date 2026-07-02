@@ -10,6 +10,7 @@
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
+    "jsx": "react-jsx",
     "moduleResolution": "Node",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,

@@ -1,5 +1,19 @@
 <template>
-  <aside class="left-0 bottom-0 w-screen md:w-fit md:h-screen fixed p-4 z-50 lg:flex">
+  <!-- 替换：原自定义侧边栏/导航按钮/最近文件列表 → MUI Paper/List/ListItemButton/Button，功能已保留 -->
+  <MuiSidebarAdapter
+    :active-path="route.path"
+    :role="role"
+    :username="username"
+    :is-authenticated="isAuthenticated"
+    :chats="chats"
+    :mode="themeStore.mode"
+    @navigate="navigate"
+    @account-action="handleAccountAction"
+    @logout="handleLogout"
+    @auth="goToAuth"
+  />
+
+  <aside v-if="legacySidebarVisible" class="left-0 bottom-0 w-screen md:w-fit md:h-screen fixed p-4 z-50 lg:flex">
     <div class="w-64 md:order-2 h-full z-40 rounded-l-none rounded-2xl bg-[color:var(--nav-bg)] border border-l-transparent border-[color:var(--nav-border)] hidden flex-col p-4 space-y-3 overflow-y-auto custom-scroll backdrop-blur-2xl">
       <h3 class="text-[11px] font-semibold uppercase tracking-wider mb-2 px-1 text-[color:var(--nav-text-muted)]">最近文件</h3>
       <RouterLink
@@ -231,16 +245,20 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AccountSettingsModal from "./AccountSettingsModal.vue";
+import MuiSidebarAdapter from "./mui/MuiSidebarAdapter.vue";
 import { getChats, type ChatsList } from "../lib/api";
 import { useAuthStore } from "../stores/auth";
 import { useRoleStore } from "../stores/role";
+import { useThemeStore } from "../stores/theme";
 
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 const roleStore = useRoleStore();
+const themeStore = useThemeStore();
 const chats = ref<ChatsList["chats"]>([]);
 const showSettings = ref(false);
+const legacySidebarVisible = false;
 
 const role = computed(() => roleStore.role);
 const username = computed(() => authStore.username);
@@ -283,6 +301,10 @@ onMounted(async () => {
   await loadChats();
 });
 watch([role, isAuthenticated], loadChats);
+
+const navigate = async (path: string) => {
+  await router.push(path);
+};
 
 const goToAuth = async () => {
   await router.push({

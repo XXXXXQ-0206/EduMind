@@ -1,5 +1,38 @@
 <template>
-  <Teleport to="body">
+  <!-- 替换：原自定义账户设置 Modal/确认弹窗/表单控件 → MUI Dialog/TextField/Button/Alert，功能已保留 -->
+  <MuiAccountSettingsAdapter
+    :open="open"
+    :username="username"
+    :old-password="oldPassword"
+    :new-password="newPassword"
+    :confirm-password="confirmPassword"
+    :delete-password="deletePassword"
+    :show-old-password="showOldPassword"
+    :show-new-password="showNewPassword"
+    :show-confirm-password="showConfirmPassword"
+    :show-delete-password="showDeletePassword"
+    :password-error="passwordError"
+    :delete-error="deleteError"
+    :password-submitting="passwordSubmitting"
+    :delete-submitting="deleteSubmitting"
+    :confirming-deletion="confirmingDeletion"
+    :mode="themeStore.mode"
+    @close="closeModal"
+    @update-old-password="setOldPassword"
+    @update-new-password="setNewPassword"
+    @update-confirm-password="setConfirmPassword"
+    @update-delete-password="setDeletePassword"
+    @toggle-old-password="toggleOldPassword"
+    @toggle-new-password="toggleNewPassword"
+    @toggle-confirm-password="toggleConfirmPassword"
+    @toggle-delete-password="toggleDeletePassword"
+    @submit-password="submitPasswordChange"
+    @open-delete-confirm="openDeleteConfirm"
+    @close-delete-confirm="closeDeleteConfirm"
+    @submit-delete-account="submitDeleteAccount"
+  />
+
+  <Teleport v-if="legacyAccountSettingsVisible" to="body">
     <div v-if="open" class="fixed inset-0 z-[80] flex items-center justify-center p-4">
       <button
         type="button"
@@ -223,7 +256,9 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import MuiAccountSettingsAdapter from "./mui/MuiAccountSettingsAdapter.vue";
 import { useAuthStore } from "../stores/auth";
+import { useThemeStore } from "../stores/theme";
 
 const props = defineProps<{
   open: boolean;
@@ -236,6 +271,7 @@ const emit = defineEmits<{
 }>();
 
 const authStore = useAuthStore();
+const themeStore = useThemeStore();
 
 const oldPassword = ref("");
 const newPassword = ref("");
@@ -251,6 +287,39 @@ const deleteError = ref("");
 const passwordSubmitting = ref(false);
 const deleteSubmitting = ref(false);
 const confirmingDeletion = ref(false);
+const legacyAccountSettingsVisible = false;
+
+const setOldPassword = (value: string) => {
+  oldPassword.value = value;
+};
+
+const setNewPassword = (value: string) => {
+  newPassword.value = value;
+};
+
+const setConfirmPassword = (value: string) => {
+  confirmPassword.value = value;
+};
+
+const setDeletePassword = (value: string) => {
+  deletePassword.value = value;
+};
+
+const toggleOldPassword = () => {
+  showOldPassword.value = !showOldPassword.value;
+};
+
+const toggleNewPassword = () => {
+  showNewPassword.value = !showNewPassword.value;
+};
+
+const toggleConfirmPassword = () => {
+  showConfirmPassword.value = !showConfirmPassword.value;
+};
+
+const toggleDeletePassword = () => {
+  showDeletePassword.value = !showDeletePassword.value;
+};
 
 const resetPasswordForm = () => {
   oldPassword.value = "";
