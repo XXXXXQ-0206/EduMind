@@ -1,0 +1,67 @@
+@startuml
+title EduMind（智教）核心业务流程图
+
+skinparam shadowing false
+skinparam defaultFontName "Microsoft YaHei"
+skinparam defaultFontSize 14
+skinparam activity {
+  BackgroundColor #F8FBFF
+  BorderColor #5B6B7A
+  FontColor #1F2937
+}
+skinparam diamond {
+  BackgroundColor #FFF2CC
+  BorderColor #D6B656
+}
+skinparam ArrowColor #34495E
+
+start
+
+:用户进入 EduMind Web 前端;
+:登录 / 注册;
+:系统完成身份认证与角色识别;
+
+if (选择使用角色?) then (教师端)
+  :进入教师工作台;
+  :选择教学资料或上传新资料;
+  :选择教师端任务\n教案 / 测验 / 试卷 / 幻灯片 / 教学视频;
+else (学生端)
+  :进入学生工作台;
+  :选择学习资料或上传新资料;
+  :选择学生端任务\n智能笔记 / 知识卡片 / 错题本 / 播客 / 口语练习;
+endif
+
+if (是否关联资料?) then (是)
+  :文件服务解析资料\nPDF / DOCX / Markdown / TXT;
+  :RAG 服务切分文本并写入向量库;
+  :根据用户、角色、资料权限进行检索;
+  :构造带资料上下文的 Prompt;
+else (否)
+  :使用用户输入与任务参数构造 Prompt;
+endif
+
+:Agent 编排任务\n按任务类型调用对应 Agent;
+
+if (是否为长耗时任务?) then (是)
+  :创建异步任务;
+  :通过 WebSocket 返回阶段进度;
+  :调用模型、TTS、图像或视频服务;
+else (否)
+  :同步调用模型生成结果;
+endif
+
+:生成结构化结果;
+
+if (结果是否需要修正?) then (是)
+  :用户调整参数或补充资料;
+  :重新生成 / 局部重试;
+else (否)
+endif
+
+:保存结果与历史记录\nJSON / 数据库 / 对象存储;
+:前端展示结果\n查看 / 下载 / 复盘;
+:记录审计日志\n登录、资料访问、生成任务、模型调用;
+
+stop
+
+@enduml

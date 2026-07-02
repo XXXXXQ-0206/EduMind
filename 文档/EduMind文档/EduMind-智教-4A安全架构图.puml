@@ -1,0 +1,149 @@
+@startuml
+title EduMind（智教）4A 安全架构图（简洁版）
+
+top to bottom direction
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName "Microsoft YaHei"
+skinparam defaultFontSize 14
+skinparam packageStyle rectangle
+skinparam ArrowColor #34495E
+skinparam RectangleBorderColor #5B6B7A
+skinparam RectangleBackgroundColor #F8FBFF
+skinparam DatabaseBorderColor #5B6B7A
+
+actor "教师 / 学生 / 管理员" as User
+
+rectangle "前端访问层\nEduMind Web 前端" as Frontend
+rectangle "统一网关层\nNginx / API Gateway\nHTTPS / WebSocket / Token 校验" as Gateway
+
+package "4A 安全中心" as FourA {
+  rectangle "Account\n账号管理\n用户、角色、组织、账号状态" as Account
+  rectangle "Authentication\n认证管理\n登录认证、Token、会话管理" as Authentication
+  rectangle "Authorization\n授权管理\nRBAC、接口权限、资料权限" as Authorization
+  rectangle "Audit\n审计管理\n登录、操作、资料访问、模型调用日志" as Audit
+}
+
+rectangle "EduMind 业务服务层\n教学服务 / 学习服务 / 文件服务 / RAG 服务 / 异步任务" as Business
+
+database "数据与日志存储层\n业务数据库 / 权限库 / 审计日志库 / Redis / 对象存储 / 向量库" as Storage
+
+rectangle "运维与合规层\n监控告警 / 日志检索 / 数据备份 / 安全策略" as Ops
+
+User --> Frontend : 访问系统
+Frontend --> Gateway : 请求进入
+Gateway --> FourA : 认证、授权、审计
+FourA --> Business : 放行合法请求
+Business --> Storage : 数据读写
+
+Ops ..> Gateway
+Ops ..> FourA
+Ops ..> Business
+Ops ..> Storage
+
+note right of FourA
+4A 作用：
+账号统一管理
+身份统一认证
+权限统一控制
+行为统一审计
+end note
+
+@enduml
+
+/'
+以下为旧版详细 4A 图，已注释停用。
+title EduMind（智教）4A 安全架构图
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName "Microsoft YaHei"
+skinparam defaultFontSize 14
+skinparam packageStyle rectangle
+skinparam ArrowColor #34495E
+skinparam RectangleBorderColor #5B6B7A
+skinparam RectangleBackgroundColor #F8FBFF
+skinparam DatabaseBorderColor #5B6B7A
+
+actor "教师 / 学生 / 管理员" as User
+actor "系统管理员" as SysAdmin
+
+rectangle "前端访问层\nEduMind Web 前端\n教师端 / 学生端 / 管理端" as Frontend
+
+rectangle "统一接入层\nNginx / API Gateway\nHTTPS / Token 校验 / WebSocket 转发" as Gateway
+
+package "4A 安全中心" {
+  rectangle "Account 账号管理\n用户、角色、组织、账号生命周期" as Account
+  rectangle "Authentication 认证管理\n登录认证、Token、单点登录、会话管理" as Authentication
+  rectangle "Authorization 授权管理\nRBAC、资源权限、接口权限、资料权限" as Authorization
+  rectangle "Audit 审计管理\n登录日志、操作日志、模型调用、资料访问记录" as Audit
+}
+
+rectangle "EduMind 业务服务层\nFastAPI 服务集群\n教学服务 / 学习服务 / 文件服务 / 异步任务服务" as Business
+
+rectangle "RAG 与 AI 能力层\n资料解析 / 向量检索 / Agent 编排 / 模型网关" as AI
+
+database "业务数据库\n用户、会话、角色、权限、业务记录" as RDB
+database "审计日志库\n访问日志、操作日志、模型调用日志" as AuditDB
+database "向量库与对象存储\n资料切片、Embedding、PDF、音视频文件" as DataStore
+
+rectangle "运维与合规层\n监控告警 / 日志检索 / 安全策略 / 数据备份" as Ops
+
+User --> Frontend : 访问系统
+SysAdmin --> Frontend : 管理账号与权限
+
+Frontend --> Gateway : HTTPS / WebSocket
+
+Gateway --> Authentication : 登录认证 / Token 校验
+Authentication --> Account : 读取账号状态
+Authentication --> RDB : 会话与认证数据
+
+Gateway --> Authorization : 接口访问鉴权
+Authorization --> Account : 获取用户角色
+Authorization --> RDB : 读取权限规则
+
+Gateway --> Business : 放行后的业务请求
+Business --> Authorization : 资料 / 功能 / 角色权限校验
+Business --> AI : RAG 查询与生成任务
+AI --> DataStore : 向量检索 / 资料读取 / 成果保存
+Business --> RDB : 业务数据读写
+
+Gateway --> Audit : 访问审计
+Business --> Audit : 操作审计
+AI --> Audit : 模型调用审计
+Audit --> AuditDB : 写入审计日志
+
+Account --> RDB : 用户、角色、组织、账号状态
+Authorization --> RDB : 权限策略
+Ops ..> Gateway
+Ops ..> Business
+Ops ..> AI
+Ops ..> AuditDB
+
+note right of Account
+Account：
+统一维护教师、学生、管理员账号，
+支持角色、组织、状态和账号生命周期管理。
+end note
+
+note right of Authentication
+Authentication：
+统一登录入口，负责身份认证、
+Token 签发、会话续期和退出登录。
+end note
+
+note right of Authorization
+Authorization：
+基于 RBAC 控制教师端、学生端、
+文件资料、RAG 知识库和管理接口权限。
+end note
+
+note right of Audit
+Audit：
+记录登录、资料访问、生成任务、
+模型调用和管理员操作，便于追踪与合规。
+end note
+
+@enduml
+'/

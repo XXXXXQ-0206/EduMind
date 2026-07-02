@@ -1,0 +1,113 @@
+@startuml
+title EduMind（智教）分布式 RAG 系统整体架构图（精简版）
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName "Microsoft YaHei"
+skinparam defaultFontSize 14
+skinparam packageStyle rectangle
+skinparam ArrowColor #34495E
+skinparam RectangleBorderColor #5B6B7A
+skinparam RectangleBackgroundColor #F8FBFF
+skinparam DatabaseBorderColor #5B6B7A
+
+actor "教师" as Teacher
+actor "学生" as Student
+actor "管理员" as Admin
+
+package "前端访问层" {
+  component "EduMind Web 前端\n教师端 / 学生端 / 文件库 / 历史记录" as Frontend
+}
+
+package "网关层" {
+  component "Nginx / API Gateway\nHTTPS / 负载均衡 / WebSocket 转发" as Gateway
+}
+
+package "后端业务服务层\nFastAPI 分布式服务" {
+  component "认证与用户服务\n登录注册 / Token / 角色隔离" as AuthService
+  component "教学业务服务\n教案 / 测验 / 试卷 / 教学视频" as TeacherService
+  component "学习业务服务\n笔记 / 卡片 / 错题本 / 播客 / 口语" as StudentService
+  component "文件资料服务\n上传 / 解析 / 权限校验 / 元数据" as FileService
+  component "异步任务服务\n消息队列 + Worker + 进度推送" as TaskService
+}
+
+package "RAG 与 AI 能力层" {
+  component "RAG 服务\n切分 / 向量检索 / 重排 / Prompt 构建" as RagService
+  component "Agent 编排层\n教案、笔记、测验、多模态生成" as AgentService
+  component "模型网关\nLLM / Embedding / TTS / ASR / 图像视频" as ModelGateway
+}
+
+package "数据存储层" {
+  database "关系数据库\n用户、会话、权限、业务记录" as RDB
+  database "向量数据库\n资料切片与 Embedding" as VectorDB
+  database "对象存储\nPDF、图片、音频、视频、生成文件" as ObjectStore
+  database "Redis\n缓存、会话、任务状态" as Redis
+}
+
+package "部署运维层" {
+  node "Docker / Kubernetes\n服务编排、弹性扩展、滚动发布" as Deploy
+  component "监控与日志\n指标、告警、调用日志" as Ops
+}
+
+Teacher --> Frontend
+Student --> Frontend
+Admin --> Frontend
+
+Frontend --> Gateway : HTTPS / WebSocket
+
+Gateway --> AuthService
+Gateway --> TeacherService
+Gateway --> StudentService
+Gateway --> FileService
+Gateway --> RagService
+
+AuthService --> RDB
+AuthService --> Redis
+
+TeacherService --> AgentService
+StudentService --> AgentService
+TeacherService --> TaskService : 长耗时生成
+StudentService --> TaskService : 长耗时生成
+TaskService --> Redis : 任务状态
+TaskService --> Frontend : 进度反馈
+
+FileService --> ObjectStore : 保存原始资料
+FileService --> RDB : 文件元数据与权限
+FileService --> RagService : 触发资料入库
+
+RagService --> ObjectStore : 读取资料文本
+RagService --> VectorDB : 写入 / 检索向量
+RagService --> RDB : 权限过滤
+RagService --> AgentService : 检索上下文
+
+AgentService --> ModelGateway : 生成请求
+ModelGateway --> AgentService : 模型结果
+
+TeacherService --> ObjectStore : 生成成果
+StudentService --> ObjectStore : 学习成果
+AgentService --> RDB : 生成记录
+
+Deploy ..> Gateway
+Deploy ..> AuthService
+Deploy ..> TeacherService
+Deploy ..> StudentService
+Deploy ..> RagService
+Deploy ..> TaskService
+Ops ..> Gateway
+Ops ..> TaskService
+Ops ..> ModelGateway
+
+note right of RagService
+RAG 主流程：
+上传资料 -> 解析切分 -> 向量入库
+-> 权限过滤检索 -> 构造 Prompt
+-> 调用模型生成结果
+end note
+
+note bottom of TaskService
+普通文本任务可同步返回；
+播客、视频、幻灯片等长任务
+通过队列和 WebSocket 返回进度。
+end note
+
+@enduml

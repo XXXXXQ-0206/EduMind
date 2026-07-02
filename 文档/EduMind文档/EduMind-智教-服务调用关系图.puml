@@ -1,0 +1,135 @@
+@startuml
+title EduMind（智教）服务调用关系图（简洁版）
+
+left to right direction
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName "Microsoft YaHei"
+skinparam defaultFontSize 14
+skinparam packageStyle rectangle
+skinparam ArrowColor #34495E
+skinparam RectangleBorderColor #5B6B7A
+skinparam RectangleBackgroundColor #F8FBFF
+skinparam DatabaseBorderColor #5B6B7A
+
+actor "教师 / 学生 / 管理员" as User
+
+rectangle "Web 前端\n教师端 / 学生端 / 管理端" as Frontend
+rectangle "统一网关\nNginx / API Gateway\n鉴权、路由、WebSocket" as Gateway
+rectangle "业务服务聚合层\n认证服务、文件服务、教师服务、学生服务、异步任务服务" as Business
+rectangle "AI 能力聚合层\nRAG 服务、Agent 编排、模型网关" as AI
+database "数据服务层\n业务库、向量库、对象存储、Redis、审计日志" as Data
+
+User --> Frontend : 操作页面
+Frontend --> Gateway : HTTPS / WebSocket
+Gateway --> Business : 转发业务请求
+Business --> AI : 生成任务 / RAG 查询
+Business --> Data : 用户、资料、历史记录
+AI --> Data : 向量检索、资料读取、结果保存
+Business --> Frontend : 业务结果 / 任务状态
+
+note bottom of Business
+业务服务聚合：
+认证与权限、资料管理、
+教师端功能、学生端功能、
+异步任务与进度推送。
+end note
+
+note bottom of AI
+AI 调用链：
+RAG 获取资料上下文
+Agent 编排任务
+模型网关统一调用大模型、
+Embedding、TTS、ASR 等能力。
+end note
+
+@enduml
+
+/'
+以下为旧版详细服务调用图，已注释停用。
+title EduMind（智教）服务调用关系图
+
+left to right direction
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName "Microsoft YaHei"
+skinparam defaultFontSize 14
+skinparam packageStyle rectangle
+skinparam ArrowColor #34495E
+skinparam RectangleBorderColor #5B6B7A
+skinparam RectangleBackgroundColor #F8FBFF
+skinparam DatabaseBorderColor #5B6B7A
+
+actor "教师 / 学生 / 管理员" as User
+
+rectangle "Web 前端\nVue3" as Frontend
+rectangle "API Gateway\nNginx / 统一入口" as Gateway
+
+package "后端服务集群" {
+  rectangle "Auth Service\n认证与用户" as Auth
+  rectangle "File Service\n资料上传与解析" as File
+  rectangle "Teacher Service\n教师端业务" as Teacher
+  rectangle "Student Service\n学生端业务" as Student
+  rectangle "Task Service\n异步任务与进度" as Task
+}
+
+package "AI 服务集群" {
+  rectangle "RAG Service\n检索增强生成" as RAG
+  rectangle "Agent Service\n任务编排" as Agent
+  rectangle "Model Gateway\nLLM / Embedding / TTS / ASR" as Model
+}
+
+package "数据服务" {
+  database "业务数据库\n用户 / 会话 / 业务记录" as RDB
+  database "向量数据库\nEmbedding / Chunk" as VectorDB
+  database "对象存储\n资料 / 图片 / 音频 / 视频" as ObjectStore
+  database "Redis\n缓存 / Token / 任务状态" as Redis
+}
+
+User --> Frontend : 操作页面
+Frontend --> Gateway : HTTPS / WebSocket
+
+Gateway --> Auth : 登录、鉴权
+Gateway --> File : 文件上传、资料选择
+Gateway --> Teacher : 教师端功能请求
+Gateway --> Student : 学生端功能请求
+
+Auth --> RDB : 用户、角色、权限
+Auth --> Redis : Token、会话缓存
+
+File --> ObjectStore : 保存原始资料
+File --> RAG : 解析、切分、向量入库
+RAG --> VectorDB : 写入 / 检索向量
+RAG --> ObjectStore : 读取资料原文
+RAG --> RDB : 权限与元数据
+
+Teacher --> Agent : 教案、测验、试卷、教学视频
+Student --> Agent : 笔记、卡片、错题、播客、口语
+Teacher --> Task : 长耗时任务
+Student --> Task : 长耗时任务
+Task --> Redis : 任务状态
+Task --> Frontend : WebSocket 进度推送
+
+Agent --> RAG : 获取资料上下文
+Agent --> Model : 调用模型能力
+Model --> Agent : 返回生成结果
+
+Teacher --> RDB : 保存教学记录
+Student --> RDB : 保存学习记录
+Agent --> ObjectStore : 保存生成文件
+
+note bottom of Gateway
+所有请求先经过统一入口，
+再转发到具体业务服务。
+end note
+
+note bottom of Agent
+Agent 负责任务编排；
+RAG 负责资料增强；
+Model Gateway 负责统一模型调用。
+end note
+
+@enduml
+'/
