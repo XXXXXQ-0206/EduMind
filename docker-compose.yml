@@ -518,7 +518,7 @@ services:
         NODE_IMAGE: ${DOCKER_NODE_IMAGE:-docker.1ms.run/library/node:20-alpine}
         NGINX_IMAGE: ${DOCKER_NGINX_IMAGE:-dockerproxy.net/library/nginx:1.27-alpine}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:5000}
+        VITE_BACKEND_URL: ${FRONTEND_VITE_BACKEND_URL:-}
         VITE_TIMEOUT: ${VITE_TIMEOUT:-90000}
     image: edumind-frontend:latest
     container_name: edumind-frontend

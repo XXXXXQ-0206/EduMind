@@ -110,13 +110,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { env } from "../config/env";
-import { getAuthToken } from "../lib/auth";
-import { getUserScopedStorageKey, readScopedStorage } from "../lib/userStorage";
+import { getUserScopedStorageKey } from "../lib/userStorage";
 import {
   chatJSON,
+  connectChatStream,
+  connectTaskEvents,
   getChatDetail,
   type FlashCard,
+  type ChatEvent,
   type ChatMessage,
   podcastStart,
 } from "../lib/api";
@@ -147,10 +148,16 @@ const cards = ref<FlashCard[]>([]);
 const busy = ref(false);
 const connecting = ref(false);
 const awaitingAnswer = ref(false);
+const generationPhase = ref("");
 const topic = ref("");
 
+const streamRef = ref<{ close: () => void } | null>(null);
 const wsRef = ref<WebSocket | null>(null);
 const connectedChatId = ref("");
+const streamMode = ref<"sse" | "ws" | "">("");
+const fallbackAttempted = ref(false);
+const receivedStreamEvent = ref(false);
+const streamingAssistantIndex = ref<number | null>(null);
 const messageViewportRef = ref<HTMLDivElement | null>(null);
 const scrollRef = ref<HTMLDivElement | null>(null);
 
@@ -268,9 +275,17 @@ const pendingAnchorIndex = computed(() => {
   }
   return -1;
 });
-const pendingStatusText = computed(() =>
-  connecting.value ? "问题已经收到，正在连接回答通道" : "问题已经收到，正在整理答案和上下文"
-);
+const pendingStatusText = computed(() => {
+  if (connecting.value) return "问题已经收到，正在连接回答通道";
+  const phaseText: Record<string, string> = {
+    queued: "请求已进入生成队列",
+    preparing: "正在整理对话上下文",
+    retrieving: "正在检索资料库内容",
+    generating: "正在调用模型生成回答",
+    streaming: "正在接收模型回答",
+  };
+  return phaseText[generationPhase.value] || "问题已经收到，正在整理答案和上下文";
+});
 
 const extractFirstJsonObject = (s: string) => {
   let depth = 0;
@@ -366,72 +381,167 @@ const closeSocket = () => {
     // Ignore socket close races during route transitions.
   }
   wsRef.value = null;
+};
+
+const closeStream = () => {
+  try {
+    streamRef.value?.close();
+  } catch {
+    // EventSource/WebSocket may already be closed.
+  }
+  streamRef.value = null;
+  closeSocket();
   connectedChatId.value = "";
+  streamMode.value = "";
+};
+
+const lastUserIndex = () => {
+  for (let i = list.value.length - 1; i >= 0; i -= 1) {
+    if (list.value[i].role === "user") return i;
+  }
+  return -1;
+};
+
+const assistantAfterLastUserIndex = () => {
+  const anchor = lastUserIndex();
+  for (let i = list.value.length - 1; i > anchor; i -= 1) {
+    if (list.value[i].role === "assistant") return i;
+  }
+  return -1;
+};
+
+const ensureStreamingAssistant = () => {
+  const existing = streamingAssistantIndex.value ?? assistantAfterLastUserIndex();
+  if (existing >= 0 && list.value[existing]?.role === "assistant") {
+    streamingAssistantIndex.value = existing;
+    return existing;
+  }
+  const next = [...list.value, { role: "assistant" as const, content: "", at: Date.now() }];
+  messages.value = next;
+  streamingAssistantIndex.value = next.length - 1;
+  return streamingAssistantIndex.value;
+};
+
+const updateAssistantContent = (content: string, replace = false) => {
+  const index = ensureStreamingAssistant();
+  const next = [...list.value];
+  const current = next[index];
+  if (!current || current.role !== "assistant") return;
+  next[index] = {
+    ...current,
+    content: replace ? content : `${current.content || ""}${content}`,
+    at: Date.now(),
+  };
+  messages.value = next;
+  setTimeout(() => scrollToBottom("smooth"), 0);
+};
+
+const finishAnswer = () => {
+  awaitingAnswer.value = false;
+  connecting.value = false;
+  busy.value = false;
+  generationPhase.value = "";
+  streamingAssistantIndex.value = null;
+  streamRef.value?.close();
+  streamRef.value = null;
+  closeSocket();
+  streamMode.value = "";
+};
+
+const handleChatEvent = (m: ChatEvent | any) => {
+  if (!m?.type) return;
+  if (m.type !== "ready" && m.type !== "ping") receivedStreamEvent.value = true;
+
+  if (m.type === "ready") {
+    connecting.value = false;
+    return;
+  }
+  if (m.type === "phase") {
+    generationPhase.value = String(m.value || "");
+    awaitingAnswer.value = true;
+    busy.value = true;
+    connecting.value = false;
+    return;
+  }
+  if (m.type === "ping") {
+    awaitingAnswer.value = true;
+    busy.value = true;
+    connecting.value = false;
+    return;
+  }
+  if (m.type === "delta") {
+    const delta = String(m.delta || "");
+    if (!delta) return;
+    generationPhase.value = "streaming";
+    awaitingAnswer.value = false;
+    busy.value = true;
+    connecting.value = false;
+    updateAssistantContent(delta);
+    return;
+  }
+  if (m.type === "answer") {
+    const norm = normalizePayload(m.answer);
+    if (norm.md) updateAssistantContent(norm.md, true);
+    if (norm.flashcards.length) cards.value = norm.flashcards;
+    if (norm.topic) topic.value = norm.topic;
+    else if (norm.md && !topic.value) topic.value = deriveTopicFromMarkdown(norm.md);
+    awaitingAnswer.value = false;
+    connecting.value = false;
+    return;
+  }
+  if (m.type === "done") {
+    finishAnswer();
+    return;
+  }
+  if (m.type === "error") {
+    const errText = String(m.error || "");
+    if (streamMode.value === "sse" && errText === "stream_error" && busy.value && !fallbackAttempted.value) {
+      fallbackAttempted.value = true;
+      const cid = connectedChatId.value || chatId.value;
+      try {
+        streamRef.value?.close();
+      } catch {
+        // Ignore close races while switching transports.
+      }
+      streamRef.value = null;
+      if (cid) connectChatWebSocket(cid);
+      return;
+    }
+    if (errText === "stream_error" && !receivedStreamEvent.value) {
+      connecting.value = false;
+      return;
+    }
+    updateAssistantContent(`抱歉，生成失败：${errText || "模型生成失败，请稍后重试"}`, true);
+    finishAnswer();
+  }
+};
+
+const connectChatWebSocket = (cid: string) => {
+  closeSocket();
+  streamMode.value = "ws";
+  connecting.value = true;
+  const { ws, close } = connectChatStream(cid, handleChatEvent);
+  wsRef.value = ws;
+  streamRef.value = { close };
+  ws.onopen = () => (connecting.value = false);
+  ws.onclose = () => {
+    if (busy.value || awaitingAnswer.value) return;
+    if (wsRef.value === ws) {
+      wsRef.value = null;
+    }
+  };
 };
 
 const connectChat = (cid: string) => {
   if (!cid) return;
-  if (connectedChatId.value === cid && wsRef.value && wsRef.value.readyState <= WebSocket.OPEN) {
-    return;
-  }
-  closeSocket();
-  const token = getAuthToken();
-  const wsUrl = (env.backend || window.location.origin).replace(/^http/, "ws")
-    + `/ws/chat?chatId=${encodeURIComponent(cid)}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
-  const ws = new WebSocket(wsUrl);
-  wsRef.value = ws;
+  if (connectedChatId.value === cid && streamRef.value) return;
+  closeStream();
   connectedChatId.value = cid;
+  streamMode.value = "sse";
+  fallbackAttempted.value = false;
+  receivedStreamEvent.value = false;
   connecting.value = true;
-  ws.onopen = () => (connecting.value = false);
-  ws.onmessage = (ev) => {
-    try {
-      const m = JSON.parse(ev.data as string);
-      if (m?.type === "phase" && m?.value === "generating") {
-        awaitingAnswer.value = true;
-        busy.value = true;
-        return;
-      }
-      if (m?.type === "answer") {
-        const norm = normalizePayload(m.answer);
-        messages.value = [...list.value, { role: "assistant", content: norm.md, at: Date.now() }];
-        if (norm.flashcards.length) cards.value = norm.flashcards;
-        if (norm.topic) topic.value = norm.topic;
-        else if (norm.md && !topic.value) topic.value = deriveTopicFromMarkdown(norm.md);
-        awaitingAnswer.value = false;
-        busy.value = false;
-        setTimeout(() => scrollToBottom("smooth"), 0);
-        return;
-      }
-      if (m?.type === "error") {
-        const errText = String(m?.error || "模型生成失败，请稍后重试");
-        messages.value = [...list.value, { role: "assistant", content: `抱歉，生成失败：${errText}`, at: Date.now() }];
-        awaitingAnswer.value = false;
-        busy.value = false;
-        setTimeout(() => scrollToBottom("smooth"), 0);
-        return;
-      }
-      if (m?.type === "done") {
-        awaitingAnswer.value = false;
-        busy.value = false;
-      }
-    } catch {
-      return;
-    }
-  };
-  ws.onerror = () => {
-    connecting.value = false;
-    busy.value = false;
-    awaitingAnswer.value = false;
-  };
-  ws.onclose = () => {
-    connecting.value = false;
-    busy.value = false;
-    awaitingAnswer.value = false;
-    if (wsRef.value === ws) {
-      wsRef.value = null;
-      connectedChatId.value = "";
-    }
-  };
+  streamRef.value = connectTaskEvents<ChatEvent>("chat", cid, handleChatEvent);
 };
 
 const loadChatsIfEmpty = async () => {
@@ -493,10 +603,10 @@ const sendFollowup = async (text: string) => {
   messages.value = [...list.value, { role: "user", content: trimmed, at: Date.now() }];
   awaitingAnswer.value = true;
   busy.value = true;
+  generationPhase.value = "queued";
+  streamingAssistantIndex.value = null;
   try {
-    // A websocket stream in this page handles one pending user message;
-    // reconnect per turn to trigger the next generation reliably.
-    closeSocket();
+    closeStream();
     const materialIds = includeMaterials.value ? loadLearningFolderIds() : [];
     const useMaterials = includeMaterials.value;
     const r = await chatJSON({
@@ -510,12 +620,19 @@ const sendFollowup = async (text: string) => {
     const nextChatId = r?.chatId || chatId.value;
     if (r?.chatId && r.chatId !== chatId.value) {
       chatId.value = r.chatId;
+      router.replace({
+        path: isTeacherPage.value ? "/teacher/chat" : "/chat",
+        query: { chatId: r.chatId },
+      });
     }
     if (nextChatId) {
       connectChat(nextChatId);
     }
+  } catch (err: any) {
+    const errText = err?.message || "提交问题失败，请稍后重试";
+    updateAssistantContent(`抱歉，${errText}`, true);
+    finishAnswer();
   } finally {
-    busy.value = false;
     setTimeout(() => scrollToBottom("smooth"), 0);
   }
 };
@@ -568,12 +685,16 @@ onMounted(async () => {
 
 watch(chatId, async (next, prev) => {
   if (!next) {
-    closeSocket();
+    closeStream();
     return;
   }
   if (next === prev) return;
   await loadChat(next);
-  connectChat(next);
+  if (list.value.length && list.value[list.value.length - 1]?.role === "user") {
+    awaitingAnswer.value = true;
+    busy.value = true;
+    connectChat(next);
+  }
 });
 
 watch(
@@ -586,7 +707,10 @@ watch(
       cards.value = [];
       topic.value = "";
       awaitingAnswer.value = false;
-      closeSocket();
+      busy.value = false;
+      generationPhase.value = "";
+      streamingAssistantIndex.value = null;
+      closeStream();
       return;
     }
     if (cid === chatId.value) return;
@@ -610,6 +734,6 @@ watch([chatId, latestAssistantContent, topic], () => {
 
 onBeforeUnmount(() => {
   companion.setDocument(null);
-  closeSocket();
+  closeStream();
 });
 </script>

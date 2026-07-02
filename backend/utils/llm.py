@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 from threading import Lock
-from typing import Optional, List, Dict, Any
+from typing import AsyncIterator, Optional, List, Dict, Any
 from config import config
 
 
@@ -278,6 +278,24 @@ async def invoke_llm(
     return await invoke_llm_local(messages, max_tokens=max_tokens, provider=provider)
 
 
+async def stream_llm(
+    messages: List[Dict[str, str]],
+    max_tokens: Optional[int] = None,
+    provider: Optional[str] = None,
+) -> AsyncIterator[str]:
+    """Stream text chunks from the configured LLM provider when supported."""
+
+    mode = (config.llm_execution_mode or "local").strip().lower()
+    service_name = os.environ.get("SERVICE_NAME", "").strip().lower()
+    if mode == "remote" and service_name != "ai-core":
+        async for chunk in stream_llm_remote(messages, max_tokens=max_tokens, provider=provider):
+            yield chunk
+        return
+
+    async for chunk in stream_llm_local(messages, max_tokens=max_tokens, provider=provider):
+        yield chunk
+
+
 async def invoke_llm_remote(
     messages: List[Dict[str, str]],
     max_tokens: Optional[int] = None,
@@ -306,6 +324,49 @@ async def invoke_llm_remote(
     if not isinstance(data, dict) or not data.get("ok"):
         raise RuntimeError(str(data.get("error") if isinstance(data, dict) else "AI Core request failed"))
     return str(data.get("text") or "")
+
+
+async def stream_llm_remote(
+    messages: List[Dict[str, str]],
+    max_tokens: Optional[int] = None,
+    provider: Optional[str] = None,
+) -> AsyncIterator[str]:
+    import json
+    import httpx
+
+    payload: Dict[str, Any] = {"messages": messages}
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
+    if provider:
+        payload["provider"] = provider
+
+    headers: Dict[str, str] = {}
+    if config.internal_service_token:
+        headers["X-Internal-Service-Token"] = config.internal_service_token
+
+    async with httpx.AsyncClient(timeout=None) as client:
+        async with client.stream(
+            "POST",
+            f"{config.ai_core_service_url.rstrip('/')}/ai/internal/invoke/stream",
+            json=payload,
+            headers=headers,
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except Exception:
+                    continue
+                if not isinstance(data, dict):
+                    continue
+                if data.get("type") == "delta":
+                    text = str(data.get("delta") or "")
+                    if text:
+                        yield text
+                elif data.get("type") == "error":
+                    raise RuntimeError(str(data.get("error") or "AI Core stream failed"))
 
 
 async def invoke_llm_local(
@@ -339,3 +400,53 @@ async def invoke_llm_local(
         return str(response.content)
     else:
         return str(response)
+
+
+async def stream_llm_local(
+    messages: List[Dict[str, str]],
+    max_tokens: Optional[int] = None,
+    provider: Optional[str] = None,
+) -> AsyncIterator[str]:
+    """Invoke the configured LLM provider with native streaming."""
+
+    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+    lc_messages = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+
+        if role == "system":
+            lc_messages.append(SystemMessage(content=content))
+        elif role == "assistant":
+            lc_messages.append(AIMessage(content=content))
+        else:
+            lc_messages.append(HumanMessage(content=content))
+
+    if provider is not None:
+        model = make_llm(max_tokens=max_tokens, provider=provider)
+    else:
+        model = get_llm(max_tokens=max_tokens)
+
+    saw_chunk = False
+    try:
+        async for chunk in model.astream(lc_messages):
+            content = getattr(chunk, "content", "")
+            if isinstance(content, list):
+                text = "".join(
+                    str(part.get("text") if isinstance(part, dict) else part)
+                    for part in content
+                    if part
+                )
+            else:
+                text = str(content or "")
+            if text:
+                saw_chunk = True
+                yield text
+    except (AttributeError, NotImplementedError):
+        saw_chunk = False
+
+    if not saw_chunk:
+        text = await invoke_llm_local(messages, max_tokens=max_tokens, provider=provider)
+        if text:
+            yield text

@@ -66,16 +66,21 @@ class RedisTaskLeaseProvider:
         except ImportError as exc:
             raise RuntimeError("TASK_LEASE_PROVIDER=redis requires the 'redis' package") from exc
 
-        self._redis = redis_async.from_url(url or config.redis_url, decode_responses=True)
+        self._redis_async = redis_async
+        self._url = url or config.redis_url
 
     async def acquire(self, name: str, ttl_seconds: Optional[int] = None) -> Optional[TaskLease]:
         ttl = int(ttl_seconds or config.task_lease_ttl_seconds)
         key = _lease_key(name)
         owner = uuid.uuid4().hex
-        ok = await self._redis.set(key, owner, nx=True, ex=ttl)
-        if ok:
-            return TaskLease(name=name, key=key, owner=owner)
-        return None
+        redis = self._redis_async.from_url(self._url, decode_responses=True)
+        try:
+            ok = await redis.set(key, owner, nx=True, ex=ttl)
+            if ok:
+                return TaskLease(name=name, key=key, owner=owner)
+            return None
+        finally:
+            await redis.aclose()
 
     async def release(self, lease: TaskLease) -> None:
         script = """
@@ -84,7 +89,11 @@ class RedisTaskLeaseProvider:
         end
         return 0
         """
-        await self._redis.eval(script, 1, lease.key, lease.owner)
+        redis = self._redis_async.from_url(self._url, decode_responses=True)
+        try:
+            await redis.eval(script, 1, lease.key, lease.owner)
+        finally:
+            await redis.aclose()
 
 
 _provider: TaskLeaseProvider | None = None

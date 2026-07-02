@@ -136,8 +136,10 @@ AI_CORE_URL=http://ai-core:5106
 | 路径 | 作用 |
 |------|------|
 | `docker-compose.yml` | 当前微服务拓扑。 |
+| `docker-compose.legacy-frontend.yml` | 旧 Vue 前端启动覆盖文件，默认快速启动脚本会使用它。 |
 | `setup-edumind-environment.ps1` | 新机器环境配置：Git、Docker、`.env`、Compose 校验、镜像构建。 |
-| `start-edumind.ps1` | 快速启动 Docker Compose 微服务。 |
+| `start-edumind.ps1` | 快速启动 Docker Compose 微服务，默认启动旧 Vue 前端；会打开 Docker Desktop 并等待按 Enter 关闭窗口。 |
+| `start-edumind-new-frontend.ps1` | 快速启动 Docker Compose 微服务，并启用 React + shadcn/ui 新前端；支持同样的 `-NoPause` / `-NoDockerWindow` 自动化参数。 |
 | `.env.example` | 环境变量模板，`.env` 不提交 Git。 |
 | `.githooks/` | 提交质量检查：pre-commit、commit-msg、pre-push。 |
 | `.github/workflows/ci.yml` | GitHub Actions 后端/前端 CI。 |
@@ -168,22 +170,23 @@ AI_CORE_URL=http://ai-core:5106
 
 | 路径 | 作用 |
 |------|------|
-| `frontend/src/router/index.ts` | 学生/教师路由、登录拦截、角色入口。 |
-| `frontend/src/lib/api.ts` | 前端 API 封装和 TypeScript 类型。 |
-| `frontend/src/stores/auth.ts` | 登录态、当前用户、token 持久化。 |
-| `frontend/src/stores/role.ts` | 教师/学生角色状态。 |
-| `frontend/src/pages/EduMindHome.vue` | 首页和 GitHub 展示入口。 |
-| `frontend/src/pages/Chat.vue` | 教师/学生对话共用页面。 |
-| `frontend/src/pages/FileLibrary.vue` | 文件库共用页面。 |
-| `frontend/src/pages/Quiz.vue` | 教师出题和学生作答共用页面。 |
-| `frontend/src/pages/Paper.vue` | 教师试卷生成页面。 |
-| `frontend/src/views/BiliLearning.vue`、`BiliLessonPrep.vue` | 学生 B 站学习和教师视频备课。 |
+| `frontend-legacy/` | 稳定旧 Vue 前端，默认快速启动使用。 |
+| `frontend/` | React + shadcn/ui 新前端，可通过 `start-edumind-new-frontend.ps1` 启动。 |
+| `frontend/src/router/index.tsx` | 学生/教师路由、登录拦截、角色入口。 |
+| `frontend/src/lib/api.ts` | React 前端 API 封装和 TypeScript 类型。 |
+| `frontend/src/stores/auth-store.ts` | 登录态、当前用户、token 持久化。 |
+| `frontend/src/stores/workspace-store.ts` | 教师/学生角色和资料选择状态。 |
+| `frontend/src/pages/dashboard-page.tsx` | 首页和工作台入口。 |
+| `frontend/src/pages/workspace-page.tsx` | 教师/学生共用的生成工作区。 |
+| `frontend/src/pages/file-library-page.tsx` | 文件库与多文件 RAG 页面。 |
+| `frontend/src/pages/records-page.tsx` | 统一生成历史记录页面。 |
+| `frontend/src/pages/auth-page.tsx` | 登录和注册入口。 |
 
 ## 六、核心功能实现
 
 ### 6.1 账户与数据隔离
 
-- 入口：`frontend/src/pages/AuthPortal.vue`。
+- 入口：`frontend/src/pages/auth-page.tsx`。
 - 后端：`backend/api/routes/auth.py`、`backend/utils/auth.py`、`backend/utils/auth_db.py`。
 - identity 服务使用 PostgreSQL 保存账户和会话；边界服务通过 `AUTH_VALIDATION_MODE=remote` 调 `/auth/internal/resolve`。
 - 业务数据按用户、scope、role 或 owner 字段隔离。新注册账户不会继承默认演示数据。
@@ -225,6 +228,12 @@ AI_CORE_URL=http://ai-core:5106
 ```powershell
 .\setup-edumind-environment.ps1
 .\start-edumind.ps1
+```
+
+`start-edumind.ps1` 默认启动旧 Vue 前端。需要体验 React + shadcn/ui 新前端时，使用：
+
+```powershell
+.\start-edumind-new-frontend.ps1
 ```
 
 访问：

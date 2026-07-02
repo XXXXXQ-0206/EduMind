@@ -3,11 +3,15 @@ param(
     [switch]$Build,
     [switch]$SkipBuild,
     [switch]$Logs,
+    [switch]$UseNewFrontend,
+    [switch]$NoDockerWindow,
+    [switch]$NoPause,
     [int]$DockerTimeoutSeconds = 180
 )
 
 $ErrorActionPreference = "Stop"
 $script:DockerExe = $null
+$script:ComposeFiles = @()
 
 function Write-Section {
     param([string]$Text)
@@ -76,8 +80,26 @@ function Test-DockerDaemon {
     }
 }
 
+function Show-DockerDesktopWindow {
+    $dockerDesktop = Find-DockerDesktop
+    if (-not $dockerDesktop) {
+        Write-Host "[WARN] Docker Desktop window cannot be opened because Docker Desktop was not found."
+        return
+    }
+
+    Write-Host "[OPEN] Docker Desktop window"
+    Start-Process -FilePath $dockerDesktop | Out-Null
+}
+
 function Start-DockerDaemon {
-    param([int]$TimeoutSeconds)
+    param(
+        [int]$TimeoutSeconds,
+        [bool]$ShowWindow = $true
+    )
+
+    if ($ShowWindow) {
+        Show-DockerDesktopWindow
+    }
 
     if (Test-DockerDaemon) {
         Write-Host "[OK] Docker daemon is running."
@@ -90,7 +112,9 @@ function Start-DockerDaemon {
     }
 
     Write-Host "[START] Docker Desktop"
-    Start-Process -FilePath $dockerDesktop -WindowStyle Hidden | Out-Null
+    if (-not $ShowWindow) {
+        Start-Process -FilePath $dockerDesktop -WindowStyle Hidden | Out-Null
+    }
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
@@ -108,7 +132,7 @@ function Start-DockerDaemon {
 function Invoke-Compose {
     param([string[]]$Arguments)
 
-    $dockerArgs = @("compose") + $Arguments
+    $dockerArgs = @("compose") + $script:ComposeFiles + $Arguments
     & $script:DockerExe @dockerArgs
     if ($LASTEXITCODE -ne 0) {
         throw "docker compose $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
@@ -118,7 +142,7 @@ function Invoke-Compose {
 function Invoke-ComposePlainBuild {
     param([string[]]$Arguments)
 
-    $dockerArgs = @("compose", "--progress", "plain", "build") + $Arguments
+    $dockerArgs = @("compose") + $script:ComposeFiles + @("--progress", "plain", "build") + $Arguments
     & $script:DockerExe @dockerArgs
     if ($LASTEXITCODE -ne 0) {
         throw "docker compose --progress plain build $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
@@ -166,10 +190,27 @@ function Warn-EnvCompatibility {
     }
 }
 
+function Wait-BeforeExit {
+    if ($NoPause -or $Logs) {
+        return
+    }
+
+    Write-Host ""
+    Write-Host "Services keep running in Docker after this script exits."
+    Write-Host "Press Enter to close this PowerShell window."
+    [void](Read-Host)
+}
+
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $AppDir = $Root
 $EnvFile = Join-Path $AppDir ".env"
 $ShouldBuildImages = -not $SkipBuild
+$LegacyFrontendOverride = Join-Path $Root "docker-compose.legacy-frontend.yml"
+$FrontendMode = if ($UseNewFrontend) { "new React frontend" } else { "legacy Vue frontend" }
+$script:ComposeFiles = @("-f", (Join-Path $Root "docker-compose.yml"))
+if (-not $UseNewFrontend) {
+    $script:ComposeFiles += @("-f", $LegacyFrontendOverride)
+}
 
 if ($Build -and $SkipBuild) {
     throw "Use either -Build or -SkipBuild, not both."
@@ -178,8 +219,10 @@ if ($Build -and $SkipBuild) {
 Write-Section "EduMind quick start"
 Write-Host "Workspace: $Root"
 Write-Host "Assumption: setup-edumind-environment.ps1 has already completed."
+Write-Host "Frontend mode: $FrontendMode"
 Write-Host "Check only: $CheckOnly"
 Write-Host "Refresh Docker images: $ShouldBuildImages"
+Write-Host "Open Docker Desktop: $(-not $NoDockerWindow)"
 if ($Build) {
     Write-Host "[INFO] -Build is kept for compatibility; image refresh is now the default."
 }
@@ -190,6 +233,9 @@ if (-not $script:DockerExe) {
 }
 if (-not (Test-Path -LiteralPath $EnvFile)) {
     throw "Missing .env. Run .\setup-edumind-environment.ps1 first."
+}
+if ((-not $UseNewFrontend) -and (-not (Test-Path -LiteralPath $LegacyFrontendOverride))) {
+    throw "Missing legacy frontend compose override: $LegacyFrontendOverride"
 }
 
 Push-Location $Root
@@ -210,7 +256,7 @@ try {
             Write-Host "[WARN] Docker daemon is not running. Normal startup will start Docker Desktop."
         }
     } else {
-        Start-DockerDaemon -TimeoutSeconds $DockerTimeoutSeconds
+        Start-DockerDaemon -TimeoutSeconds $DockerTimeoutSeconds -ShowWindow:(-not $NoDockerWindow)
     }
 
     Write-Host ""
@@ -219,10 +265,8 @@ try {
 
     if ($CheckOnly) {
         Write-Section "Check complete"
-        & $script:DockerExe compose config --services
-        if ($LASTEXITCODE -ne 0) {
-            throw "docker compose config --services failed with exit code $LASTEXITCODE"
-        }
+        Invoke-Compose @("config", "--services")
+        Wait-BeforeExit
         exit 0
     }
 
@@ -245,11 +289,21 @@ try {
     Invoke-Compose @("ps")
 
     Write-Section "Startup requested"
-    Write-Host "Frontend:        http://localhost"
+    Write-Host "Frontend:        http://localhost ($FrontendMode)"
     Write-Host "API Gateway:     http://localhost:5000"
     Write-Host "Gateway health:  http://localhost:5000/health/ready"
     Write-Host "MinIO console:   http://localhost:9001"
     Write-Host "Logs:            docker compose logs -f api-gateway ai-core generation-worker bilibili-bridge"
+    Write-Host "Stop services:   docker compose down"
+
+    Write-Host ""
+    Write-Host "[HEALTH]"
+    try {
+        $health = Invoke-WebRequest -UseBasicParsing "http://localhost:5000/health/ready" -TimeoutSec 5
+        Write-Host "Gateway ready:   $($health.StatusCode)"
+    } catch {
+        Write-Host "[WARN] Gateway readiness check failed. It may still be starting: $($_.Exception.Message)"
+    }
 
     if ($Logs) {
         Write-Section "Following logs"
@@ -258,3 +312,5 @@ try {
 } finally {
     Pop-Location
 }
+
+Wait-BeforeExit

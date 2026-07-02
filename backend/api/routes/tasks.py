@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from utils.auth import get_bearer_token, resolve_user_from_token
 from utils.live_events import format_sse_message, stream_live_events_sse
-from utils.storage import json_storage, record_belongs_to_user
+from utils.storage import get_messages, json_storage, record_belongs_to_user
 
 
 router = APIRouter()
@@ -125,6 +125,19 @@ async def task_events_sse(
                 "taskId": normalized_id,
             }
         )
+        if target.canonical_kind == "chat":
+            messages = await get_messages(normalized_id)
+            if messages and messages[-1].get("role") == "assistant":
+                yield format_sse_message(
+                    {
+                        "type": "answer",
+                        "answer": messages[-1].get("content", ""),
+                        "replayed": True,
+                    }
+                )
+                yield format_sse_message({"type": "done", "replayed": True})
+                return
+
         async for chunk in stream_live_events_sse(channel):
             if await request.is_disconnected():
                 break

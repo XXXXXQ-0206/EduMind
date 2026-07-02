@@ -2,6 +2,7 @@
 聊天 API 路由
 """
 import asyncio
+import time
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
@@ -24,11 +25,13 @@ from utils.storage import (
     record_belongs_to_user,
     update_chat_settings,
 )
-from utils.llm import invoke_llm
+from utils.llm import stream_llm
 
 
 router = APIRouter()
 CHAT_TASKS: Dict[str, asyncio.Task[Any]] = {}
+CHAT_GENERATION_TIMEOUT_SECONDS = 300
+CHAT_HEARTBEAT_SECONDS = 8.0
 
 
 class ChatRequest(BaseModel):
@@ -73,10 +76,12 @@ def _is_chat_task_running(chat_id: str) -> bool:
 
 async def _ensure_chat_generation(chat_id: str) -> None:
     if _is_chat_task_running(chat_id):
+        await _send_chat_event(chat_id, {"type": "phase", "value": "generating"})
         return
 
     lease = await claim_generation(chat_id)
     if not lease:
+        await _send_chat_event(chat_id, {"type": "phase", "value": "queued"})
         return
 
     async def _runner() -> None:
@@ -92,6 +97,7 @@ async def _ensure_chat_generation(chat_id: str) -> None:
 async def _run_chat_generation_worker(chat_id: str) -> None:
     lease = await claim_generation(chat_id)
     if not lease:
+        await _send_chat_event(chat_id, {"type": "phase", "value": "queued"})
         return
     try:
         await _run_chat_generation(chat_id)
@@ -99,18 +105,72 @@ async def _run_chat_generation_worker(chat_id: str) -> None:
         await release_generation(lease)
 
 
+async def _invoke_llm_with_progress(chat_id: str, messages: List[Dict[str, str]]) -> str:
+    started_at = time.monotonic()
+    answer_parts: List[str] = []
+    stream = stream_llm(messages)
+    stream_iter = stream.__aiter__()
+    chunk_index = 0
+    streaming_announced = False
+    next_chunk_task: asyncio.Task[str] | None = None
+    try:
+        while True:
+            if next_chunk_task is None:
+                next_chunk_task = asyncio.create_task(anext(stream_iter))
+            done, _ = await asyncio.wait({next_chunk_task}, timeout=CHAT_HEARTBEAT_SECONDS)
+            if not done:
+                elapsed = int(time.monotonic() - started_at)
+                if elapsed >= CHAT_GENERATION_TIMEOUT_SECONDS:
+                    next_chunk_task.cancel()
+                    raise TimeoutError("模型生成超时，请稍后重试或缩短问题/资料范围。")
+
+                await _send_chat_event(
+                    chat_id,
+                    {
+                        "type": "ping",
+                        "phase": "generating",
+                        "elapsed": elapsed,
+                    },
+                )
+                continue
+
+            try:
+                chunk = next_chunk_task.result()
+            except StopAsyncIteration:
+                return "".join(answer_parts)
+            finally:
+                next_chunk_task = None
+
+            if not chunk:
+                continue
+            if not streaming_announced:
+                await _send_chat_event(chat_id, {"type": "phase", "value": "streaming"})
+                streaming_announced = True
+            answer_parts.append(chunk)
+            await _send_chat_event(chat_id, {"type": "delta", "delta": chunk, "index": chunk_index})
+            chunk_index += 1
+    finally:
+        if next_chunk_task is not None and not next_chunk_task.done():
+            next_chunk_task.cancel()
+        aclose = getattr(stream_iter, "aclose", None)
+        if callable(aclose):
+            await aclose()
+
+
 async def _run_chat_generation(chat_id: str) -> None:
     try:
         chat_meta = await get_chat(chat_id) or {}
         if not isinstance(chat_meta, dict):
+            await _send_chat_event(chat_id, {"type": "done"})
             return
 
         history = await get_messages(chat_id)
         if not history or history[-1].get("role") != "user":
+            await _send_chat_event(chat_id, {"type": "done"})
             return
         latest_query = str(history[-1].get("content") or "")
 
-        await _send_chat_event(chat_id, {"type": "phase", "value": "generating"})
+        await _send_chat_event(chat_id, {"type": "phase", "value": "preparing"})
 
         length = chat_meta.get("length") or "Short"
         materials_cfg = {
@@ -150,6 +210,7 @@ async def _run_chat_generation(chat_id: str) -> None:
         }
         system_prompt = length_prompts.get(length, length_prompts["Short"])
         if use_materials and material_ids:
+            await _send_chat_event(chat_id, {"type": "phase", "value": "retrieving"})
             materials_text = await build_material_context(material_ids)
             if materials_text:
                 assistant_role = "教学助手" if chat_scope == "teacher" else "学习助手"
@@ -159,6 +220,7 @@ async def _run_chat_generation(chat_id: str) -> None:
                     "\n资料内容:\n" + materials_text
                 )
         elif use_materials:
+            await _send_chat_event(chat_id, {"type": "phase", "value": "retrieving"})
             materials_text = await build_material_context([])
             if materials_text:
                 assistant_role = "教学助手" if chat_scope == "teacher" else "学习助手"
@@ -176,7 +238,8 @@ async def _run_chat_generation(chat_id: str) -> None:
                 "content": msg.get("content", ""),
             })
 
-        answer = await invoke_llm(messages)
+        await _send_chat_event(chat_id, {"type": "phase", "value": "generating"})
+        answer = await _invoke_llm_with_progress(chat_id, messages)
         await add_message(chat_id, "assistant", answer)
         await _send_chat_event(chat_id, {"type": "answer", "answer": answer})
         await _send_chat_event(chat_id, {"type": "done"})
@@ -232,6 +295,7 @@ async def create_chat_handler(request: ChatRequest, user: AuthUser = Depends(req
 
         # 保存用户消息和长度设置
         await add_message(chat_id, "user", q)
+        await _send_chat_event(chat_id, {"type": "phase", "value": "queued"})
         await dispatch_generation_task("chat", chat_id, _ensure_chat_generation)
 
         # 返回 202 和 WebSocket URL

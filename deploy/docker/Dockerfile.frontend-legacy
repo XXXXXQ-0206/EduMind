@@ -1,0 +1,30 @@
+ARG NODE_IMAGE=node:20-bookworm-slim
+ARG NGINX_IMAGE=nginx:1.27-alpine
+
+FROM ${NODE_IMAGE} AS builder
+
+WORKDIR /app/frontend
+
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+RUN npm config set registry ${NPM_REGISTRY}
+
+COPY frontend-legacy/package*.json ./
+RUN npm ci
+
+COPY frontend-legacy ./
+COPY logo /app/logo
+
+ARG VITE_BACKEND_URL=
+ARG VITE_TIMEOUT=90000
+
+ENV VITE_BACKEND_URL=${VITE_BACKEND_URL}
+ENV VITE_TIMEOUT=${VITE_TIMEOUT}
+
+RUN npm run build
+
+FROM ${NGINX_IMAGE}
+
+COPY deploy/nginx.frontend.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/frontend/dist /usr/share/nginx/html
+
+EXPOSE 80

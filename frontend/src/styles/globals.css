@@ -1,0 +1,165 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: "Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif;
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+:root {
+  color-scheme: light;
+  --background: 36 18% 92%;
+  --foreground: 28 14% 12%;
+  --card: 36 15% 95%;
+  --card-foreground: 28 14% 12%;
+  --popover: 36 16% 96%;
+  --popover-foreground: 28 14% 12%;
+  --primary: 24 45% 42%;
+  --primary-foreground: 37 35% 95%;
+  --secondary: 34 12% 84%;
+  --secondary-foreground: 28 13% 19%;
+  --muted: 36 12% 86%;
+  --muted-foreground: 30 7% 39%;
+  --accent: 30 58% 55%;
+  --accent-foreground: 28 26% 13%;
+  --destructive: 7 55% 44%;
+  --destructive-foreground: 36 35% 96%;
+  --border: 32 9% 73%;
+  --input: 32 9% 73%;
+  --ring: 24 45% 42%;
+  --radius: 0.35rem;
+  --sidebar: hsl(38 14% 88%);
+  --sidebar-foreground: hsl(28 13% 18%);
+  --sidebar-primary: hsl(24 45% 42%);
+  --sidebar-primary-foreground: hsl(37 35% 95%);
+  --sidebar-accent: hsl(34 12% 81%);
+  --sidebar-accent-foreground: hsl(28 14% 13%);
+  --sidebar-border: hsl(32 9% 72%);
+  --sidebar-ring: hsl(24 45% 42%);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: 38 12% 7%;
+  --foreground: 35 17% 88%;
+  --card: 38 10% 10%;
+  --card-foreground: 35 17% 88%;
+  --popover: 38 10% 11%;
+  --popover-foreground: 35 17% 88%;
+  --primary: 23 44% 56%;
+  --primary-foreground: 36 22% 9%;
+  --secondary: 36 8% 16%;
+  --secondary-foreground: 35 15% 86%;
+  --muted: 36 8% 15%;
+  --muted-foreground: 34 8% 63%;
+  --accent: 28 56% 53%;
+  --accent-foreground: 36 18% 8%;
+  --destructive: 7 62% 58%;
+  --destructive-foreground: 35 20% 94%;
+  --border: 34 8% 22%;
+  --input: 34 8% 23%;
+  --ring: 23 44% 56%;
+  --sidebar: hsl(38 12% 8%);
+  --sidebar-foreground: hsl(35 15% 84%);
+  --sidebar-primary: hsl(23 44% 56%);
+  --sidebar-primary-foreground: hsl(36 22% 9%);
+  --sidebar-accent: hsl(36 8% 15%);
+  --sidebar-accent-foreground: hsl(35 17% 88%);
+  --sidebar-border: hsl(34 8% 20%);
+  --sidebar-ring: hsl(23 44% 56%);
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html {
+  min-width: 320px;
+  background: hsl(var(--background));
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: hsl(var(--primary) / 0.32);
+  color: hsl(var(--foreground));
+}
+
+* {
+  scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+  scrollbar-width: thin;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 9999;
+  transform: translateY(-150%);
+  border-radius: var(--radius);
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  padding: 0.6rem 0.85rem;
+  transition: transform 160ms ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@theme inline {
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}

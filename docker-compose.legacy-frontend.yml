@@ -1,0 +1,5 @@
+services:
+  frontend:
+    build:
+      dockerfile: deploy/docker/Dockerfile.frontend-legacy
+    image: edumind-frontend-legacy:latest

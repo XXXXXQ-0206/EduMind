@@ -3,11 +3,13 @@ param(
     [switch]$SkipDockerInstall,
     [switch]$SkipGitInstall,
     [switch]$SkipImageBuild,
+    [switch]$NoDockerWindow,
     [int]$DockerTimeoutSeconds = 240
 )
 
 $ErrorActionPreference = "Stop"
 $script:DockerExe = $null
+$script:ComposeFiles = @()
 
 function Write-Section {
     param([string]$Text)
@@ -141,8 +143,26 @@ function Test-DockerDaemon {
     }
 }
 
+function Show-DockerDesktopWindow {
+    $dockerDesktop = Find-DockerDesktop
+    if (-not $dockerDesktop) {
+        Write-Host "[WARN] Docker Desktop window cannot be opened because Docker Desktop was not found."
+        return
+    }
+
+    Write-Host "[OPEN] Docker Desktop window"
+    Start-Process -FilePath $dockerDesktop | Out-Null
+}
+
 function Start-DockerDaemon {
-    param([int]$TimeoutSeconds)
+    param(
+        [int]$TimeoutSeconds,
+        [bool]$ShowWindow = $true
+    )
+
+    if ($ShowWindow) {
+        Show-DockerDesktopWindow
+    }
 
     if (Test-DockerDaemon) {
         Write-Host "[OK] Docker daemon is running."
@@ -155,7 +175,9 @@ function Start-DockerDaemon {
     }
 
     Write-Host "[START] Docker Desktop"
-    Start-Process -FilePath $dockerDesktop -WindowStyle Hidden | Out-Null
+    if (-not $ShowWindow) {
+        Start-Process -FilePath $dockerDesktop -WindowStyle Hidden | Out-Null
+    }
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
@@ -173,7 +195,7 @@ function Start-DockerDaemon {
 function Invoke-Compose {
     param([string[]]$Arguments)
 
-    $dockerArgs = @("compose") + $Arguments
+    $dockerArgs = @("compose") + $script:ComposeFiles + $Arguments
     & $script:DockerExe @dockerArgs
     if ($LASTEXITCODE -ne 0) {
         throw "docker compose $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
@@ -207,7 +229,8 @@ function Ensure-EnvFile {
 function Assert-ComposeServices {
     param([string[]]$ExpectedServices)
 
-    $services = @(& $script:DockerExe compose config --services)
+    $dockerArgs = @("compose") + $script:ComposeFiles + @("config", "--services")
+    $services = @(& $script:DockerExe @dockerArgs)
     if ($LASTEXITCODE -ne 0) {
         throw "docker compose config --services failed with exit code $LASTEXITCODE"
     }
@@ -224,8 +247,10 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $AppDir = $Root
 $BiliDir = Join-Path $Root "services\bilibili-mcp"
 $ComposeFile = Join-Path $Root "docker-compose.yml"
+$LegacyFrontendOverride = Join-Path $Root "docker-compose.legacy-frontend.yml"
 $EnvFile = Join-Path $AppDir ".env"
 $EnvExample = Join-Path $AppDir ".env.example"
+$script:ComposeFiles = @("-f", $ComposeFile, "-f", $LegacyFrontendOverride)
 
 $RequiredServices = @(
     "postgres",
@@ -248,12 +273,16 @@ Write-Section "EduMind new-machine environment setup"
 Write-Host "Workspace: $Root"
 Write-Host "Check only: $CheckOnly"
 Write-Host "Build images: $(-not $SkipImageBuild)"
+Write-Host "Open Docker Desktop: $(-not $NoDockerWindow)"
 
 Require-Path $AppDir "Missing app directory"
 Require-Path $BiliDir "Missing Bilibili MCP directory"
 Require-Path $ComposeFile "Missing docker-compose.yml"
+Require-Path $LegacyFrontendOverride "Missing legacy frontend compose override"
 Require-Path (Join-Path $Root "deploy\docker\Dockerfile.backend") "Missing backend Dockerfile"
 Require-Path (Join-Path $Root "deploy\docker\Dockerfile.frontend") "Missing frontend Dockerfile"
+Require-Path (Join-Path $Root "deploy\docker\Dockerfile.frontend-legacy") "Missing legacy frontend Dockerfile"
+Require-Path (Join-Path $AppDir "frontend-legacy\package.json") "Missing legacy frontend package"
 Require-Path (Join-Path $AppDir "backend\api\routes\ai_core.py") "Missing AI Core route"
 Require-Path (Join-Path $AppDir "backend\core\celery_app.py") "Missing Celery app"
 Require-Path (Join-Path $AppDir "backend\core\celery_tasks.py") "Missing Celery tasks"
@@ -280,7 +309,7 @@ try {
             Write-Host "[WARN] Docker daemon is not running. Normal setup will start Docker Desktop."
         }
     } else {
-        Start-DockerDaemon -TimeoutSeconds $DockerTimeoutSeconds
+        Start-DockerDaemon -TimeoutSeconds $DockerTimeoutSeconds -ShowWindow:(-not $NoDockerWindow)
     }
 
     Ensure-EnvFile -EnvPath $EnvFile -ExamplePath $EnvExample

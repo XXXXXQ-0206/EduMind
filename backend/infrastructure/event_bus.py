@@ -51,13 +51,19 @@ class RedisEventBus:
         except ImportError as exc:
             raise RuntimeError("EVENT_BUS_PROVIDER=redis requires the 'redis' package") from exc
 
-        self._redis = redis_async.from_url(url or config.redis_url, decode_responses=True)
+        self._redis_async = redis_async
+        self._url = url or config.redis_url
 
     async def publish(self, channel: str, payload: dict[str, Any]) -> None:
-        await self._redis.publish(channel, json.dumps(payload, ensure_ascii=False))
+        redis = self._redis_async.from_url(self._url, decode_responses=True)
+        try:
+            await redis.publish(channel, json.dumps(payload, ensure_ascii=False))
+        finally:
+            await redis.aclose()
 
     async def subscribe(self, channel: str) -> AsyncIterator[dict[str, Any]]:
-        pubsub = self._redis.pubsub()
+        redis = self._redis_async.from_url(self._url, decode_responses=True)
+        pubsub = redis.pubsub()
         await pubsub.subscribe(channel)
         try:
             async for message in pubsub.listen():
@@ -73,6 +79,7 @@ class RedisEventBus:
         finally:
             await pubsub.unsubscribe(channel)
             await pubsub.close()
+            await redis.aclose()
 
 
 _local_event_bus = InMemoryEventBus()

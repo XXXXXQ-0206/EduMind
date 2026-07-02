@@ -1,0 +1,21 @@
+{
+  "output_doc": "C:\\Users\\熊骞\\Desktop\\EduMind\\docs\\generated\\EduMind数据库设计说明书.doc",
+  "output_docx": "C:\\Users\\熊骞\\Desktop\\EduMind\\docs\\generated\\EduMind数据库设计说明书.docx",
+  "output_pdf": "C:\\Users\\熊骞\\Desktop\\EduMind\\docs\\generated\\EduMind数据库设计说明书.pdf",
+  "template": {
+    "paragraphs": 349,
+    "tables": 2,
+    "inlineShapes": 0,
+    "shapes": 1,
+    "pages": 7
+  },
+  "document": {
+    "paragraphs": 851,
+    "tables": 17,
+    "pages": 20,
+    "characters": 12361
+  },
+  "missing_required_terms": [],
+  "forbidden_terms_found": [],
+  "ok": true
+}

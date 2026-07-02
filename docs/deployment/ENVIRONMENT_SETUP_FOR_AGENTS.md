@@ -13,12 +13,15 @@ C:\Users\<user>\Desktop\EduMind
 根目录必须包含：
 
 - `docker-compose.yml`
+- `docker-compose.legacy-frontend.yml`
 - `backend\`
 - `frontend\`
+- `frontend-legacy\`
 - `services\bilibili-mcp\`
 - `deploy\docker\`
 - `setup-edumind-environment.ps1`
 - `start-edumind.ps1`
+- `start-edumind-new-frontend.ps1`
 
 正常流程：
 
@@ -29,7 +32,9 @@ C:\Users\<user>\Desktop\EduMind
 
 `setup-edumind-environment.ps1` 用于新机器配置：检查或安装 Git、Docker Desktop，启动 Docker daemon，创建 `.env`，校验 Compose 拓扑，并构建后端和前端镜像。
 
-`start-edumind.ps1` 用于日常启动：假设环境配置已经完成，负责启动 Docker Desktop 和完整 Docker Compose 微服务拓扑，并默认刷新后端与前端镜像，避免合并代码后仍运行旧镜像。
+`start-edumind.ps1` 用于日常启动：假设环境配置已经完成，负责启动 Docker Desktop 和完整 Docker Compose 微服务拓扑，并默认启动稳定旧 Vue 前端、刷新后端与旧前端镜像。脚本会打开 Docker Desktop 窗口，结束前显示 `docker compose ps` 和 Gateway readiness 结果，并等待按 Enter 关闭 PowerShell 窗口。
+
+`start-edumind-new-frontend.ps1` 用于启动 React + shadcn/ui 新前端，其他行为与默认快速启动脚本一致。
 
 ## 主机依赖
 
@@ -156,16 +161,31 @@ BILIBILI_BRIDGE_URL=http://bilibili-bridge:5001
 .\start-edumind.ps1
 ```
 
+默认脚本启动旧 Vue 前端。启动 React + shadcn/ui 新前端：
+
+```powershell
+.\start-edumind-new-frontend.ps1
+```
+
 日常启动默认会刷新镜像。若只想复用已有镜像快速启动：
 
 ```powershell
 .\start-edumind.ps1 -SkipBuild
+.\start-edumind-new-frontend.ps1 -SkipBuild
 ```
 
 启动并跟随关键日志：
 
 ```powershell
 .\start-edumind.ps1 -Logs
+.\start-edumind-new-frontend.ps1 -Logs
+```
+
+Agent 自动化或 CI 场景不需要弹出 Docker Desktop / 等待输入时：
+
+```powershell
+.\start-edumind.ps1 -NoDockerWindow -NoPause
+.\start-edumind-new-frontend.ps1 -NoDockerWindow -NoPause
 ```
 
 常用 Docker 命令：
