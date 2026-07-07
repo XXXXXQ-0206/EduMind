@@ -13,7 +13,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import aiofiles
 
-from utils.parser import extract_text_from_file
+from infrastructure.object_store import create_object_store
+from utils.parser import extract_text_from_file_bytes
 from utils.storage import VectorStore, json_storage
 from utils.upload_objects import upload_object_key_from_meta, upload_path_from_meta
 
@@ -168,7 +169,17 @@ async def extract_text_for_file(meta: Dict[str, Any], *, use_cache: bool = True)
         if cached:
             return cached
 
-    text = _normalize_text(await extract_text_from_file(str(file_path), meta.get("mimeType")))
+    object_key = upload_object_key_from_meta(meta)
+    if not object_key:
+        return ""
+    content = await create_object_store().get_bytes(object_key)
+    text = _normalize_text(
+        await extract_text_from_file_bytes(
+            content,
+            filename=_file_name(meta),
+            mime_type=meta.get("mimeType"),
+        )
+    )
     if use_cache and text:
         await _write_sidecar_text(file_path, text)
     return text

@@ -4,6 +4,7 @@
 """
 import asyncio
 import aiofiles
+from io import BytesIO
 from pathlib import Path
 from typing import Optional
 import re
@@ -21,90 +22,80 @@ def _storage_root() -> Path:
     return config.storage_dir.resolve()
 
 
-def _ensure_storage_file(file_path: str | Path) -> Path:
-    path = Path(file_path)
-    resolved = path.resolve()
-    root = _storage_root()
-    if resolved != root and root not in resolved.parents:
-        raise ValueError("File path is outside the configured storage directory")
-    if not resolved.exists():
-        raise FileNotFoundError(f"File not found: {path.name}")
-    if not resolved.is_file():
-        raise ValueError("File path does not point to a regular file")
-    return resolved
-
-
 def _safe_upload_filename(filename: str | None) -> str:
     name = Path(filename or "upload.bin").name.strip() or "upload.bin"
     cleaned = re.sub(r"[^A-Za-z0-9._\-\u4e00-\u9fff]+", "_", name).strip("._")
     return cleaned[:180] or "upload.bin"
 
 
-async def extract_text_from_file(
-    file_path: str,
+async def extract_text_from_file_bytes(
+    content: bytes,
+    *,
+    filename: str = "document",
     mime_type: Optional[str] = None,
 ) -> str:
     """
-    从文件中提取文本
+    从文件内容中提取文本
 
     Args:
-        file_path: 文件路径
+        content: 文件二进制内容
+        filename: 原始文件名，仅用于扩展名判断
         mime_type: MIME 类型（可选）
 
     Returns:
         提取的文本内容
     """
-    path = _ensure_storage_file(file_path)
+    safe_name = _safe_upload_filename(filename)
+    suffix = Path(safe_name).suffix.lower()
 
     # 如果没有提供 MIME 类型，根据文件扩展名推断
     if not mime_type:
-        mime_type = _guess_mime_type(path)
+        mime_type = _guess_mime_type(safe_name)
 
     # PDF
     if "pdf" in mime_type.lower():
-        return await _extract_pdf(path)
+        return await _extract_pdf(content)
 
     lower_mime = mime_type.lower()
-    suffix = path.suffix.lower()
 
     # DOCX
     if "wordprocessingml" in lower_mime or suffix == ".docx":
-        return await _extract_docx(path)
+        return await _extract_docx(content)
 
     # 旧版 DOC：优先用 Word/LibreOffice 转换后提取
     if "msword" in lower_mime or suffix == ".doc":
-        return await _extract_legacy_doc(path)
+        return await _extract_legacy_doc(content)
 
     # PPTX
     if "presentationml" in lower_mime or suffix == ".pptx":
-        return await _extract_pptx(path)
+        return await _extract_pptx(content)
 
     # XLSX
     if "spreadsheetml" in lower_mime or suffix == ".xlsx":
-        return await _extract_xlsx(path)
+        return await _extract_xlsx(content)
 
     # Markdown
     if "markdown" in lower_mime or suffix in [".md", ".markdown"]:
-        return await _extract_markdown(path)
+        return _decode_text(content)
 
     # HTML
     if "html" in lower_mime or suffix in [".html", ".htm"]:
-        return await _extract_html(path)
+        return await _extract_html(content)
 
     # TXT
-    if "text" in lower_mime or _looks_like_text_file(path):
-        return await _extract_text(path)
+    if "text" in lower_mime or _looks_like_text_file(safe_name):
+        return _decode_text(content)
 
     # 最后尝试按文本文件解码，便于处理 .csv/.json/.py/.ts 等未声明 MIME 的文本资料。
     try:
-        return await _extract_text(path)
+        return _decode_text(content)
     except UnicodeDecodeError as exc:
         raise ValueError(f"Unsupported file type: {mime_type}") from exc
 
 
-def _guess_mime_type(path: Path) -> str:
+def _guess_mime_type(filename: str) -> str:
     """根据文件扩展名推断 MIME 类型"""
-    ext = path.suffix.lower()
+    ext = Path(filename).suffix.lower()
 
     mime_map = {
         ".pdf": "application/pdf",
@@ -127,10 +118,9 @@ def _guess_mime_type(path: Path) -> str:
     return mime_map.get(ext, "application/octet-stream")
 
 
-async def _extract_pdf(file_path: str | Path) -> str:
+async def _extract_pdf(content: bytes) -> str:
     """从 PDF 提取文本"""
-    path = _ensure_storage_file(file_path)
-    doc = pymupdf.open(str(path))
+    doc = pymupdf.open(stream=content, filetype="pdf")
     text_parts = []
 
     for page in doc:
@@ -140,30 +130,27 @@ async def _extract_pdf(file_path: str | Path) -> str:
     return "\n\n".join(text_parts)
 
 
-async def _extract_docx(file_path: str | Path) -> str:
+async def _extract_docx(content: bytes) -> str:
     """从 DOCX 提取文本"""
-    path = _ensure_storage_file(file_path)
     # 使用 mammoth 提取原始文本
-    with open(path, "rb") as docx_file:
+    with BytesIO(content) as docx_file:
         result = mammoth.extract_raw_text(docx_file)
         return result.value
 
 
-async def _extract_legacy_doc(file_path: str | Path) -> str:
+async def _extract_legacy_doc(content: bytes) -> str:
     """从旧版 .doc 提取文本。"""
-    path = _ensure_storage_file(file_path)
     try:
-        return await _convert_office_document(path, target_suffix=".docx", extractor=_extract_docx)
+        return await _convert_office_document(content, target_suffix=".docx", extractor=_extract_docx)
     except Exception as exc:
-        raise ValueError(f"Unsupported file type: {path.suffix}") from exc
+        raise ValueError("Unsupported file type: .doc") from exc
 
 
-async def _extract_pptx(file_path: str | Path) -> str:
+async def _extract_pptx(content: bytes) -> str:
     """从 PPTX 提取文本。"""
     from pptx import Presentation
 
-    path = _ensure_storage_file(file_path)
-    prs = Presentation(str(path))
+    prs = Presentation(BytesIO(content))
     slides = []
     for index, slide in enumerate(prs.slides, start=1):
         parts = []
@@ -176,12 +163,11 @@ async def _extract_pptx(file_path: str | Path) -> str:
     return "\n\n".join(slides)
 
 
-async def _extract_xlsx(file_path: str | Path) -> str:
+async def _extract_xlsx(content: bytes) -> str:
     """从 XLSX 提取文本。"""
     from openpyxl import load_workbook
 
-    path = _ensure_storage_file(file_path)
-    workbook = load_workbook(path, data_only=True, read_only=True)
+    workbook = load_workbook(BytesIO(content), data_only=True, read_only=True)
     sheets = []
     for sheet in workbook.worksheets:
         rows = []
@@ -195,41 +181,24 @@ async def _extract_xlsx(file_path: str | Path) -> str:
     return "\n\n".join(sheets)
 
 
-async def _extract_markdown(file_path: str | Path) -> str:
-    """从 Markdown 提取文本（转换为纯文本）"""
-    path = _ensure_storage_file(file_path)
-    async with aiofiles.open(path, "r", encoding="utf-8") as f:
-        content = await f.read()
-
-    # 使用 markdownify 将 markdown 转换为纯文本
-    # 或者直接返回 markdown 内容
-    return content
-
-
-async def _extract_html(file_path: str | Path) -> str:
+async def _extract_html(content: bytes) -> str:
     """从 HTML 提取可读文本。"""
-    path = _ensure_storage_file(file_path)
-    async with aiofiles.open(path, "r", encoding="utf-8") as f:
-        content = await f.read()
-    return markdownify.markdownify(content, heading_style="ATX")
+    return markdownify.markdownify(_decode_text(content), heading_style="ATX")
 
 
-async def _extract_text(file_path: str | Path) -> str:
-    """从 TXT 提取文本"""
-    path = _ensure_storage_file(file_path)
+def _decode_text(content: bytes) -> str:
+    """按常见编码解码文本内容。"""
     for encoding in ("utf-8", "utf-8-sig", "gb18030", "gbk", "latin-1"):
         try:
-            async with aiofiles.open(path, "r", encoding=encoding) as f:
-                return await f.read()
+            return content.decode(encoding)
         except UnicodeDecodeError:
             continue
-    async with aiofiles.open(path, "rb") as f:
-        return (await f.read()).decode("utf-8", errors="ignore")
+    return content.decode("utf-8", errors="ignore")
 
 
-def _looks_like_text_file(path: Path) -> bool:
+def _looks_like_text_file(filename: str) -> bool:
     """判断未知 MIME 的文件是否属于常见可文本化资料。"""
-    return path.suffix.lower() in {
+    return Path(filename).suffix.lower() in {
         ".txt",
         ".csv",
         ".tsv",
@@ -256,12 +225,8 @@ def _looks_like_text_file(path: Path) -> bool:
     }
 
 
-async def _convert_office_document(path: Path, *, target_suffix: str, extractor):
+async def _convert_office_document(content: bytes, *, target_suffix: str, extractor):
     """尝试把旧 Office 文件转成可抽取格式。"""
-    source = _ensure_storage_file(path)
-    if source.suffix.lower() == target_suffix:
-        return await extractor(source)
-
     if target_suffix not in {".docx"}:
         raise ValueError("Unsupported conversion target")
 
@@ -269,9 +234,9 @@ async def _convert_office_document(path: Path, *, target_suffix: str, extractor)
     temp_parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="edumind-office-", dir=str(temp_parent)) as temp_name:
         temp_dir = Path(temp_name).resolve()
-        temp_source = temp_dir / f"input{source.suffix.lower()}"
+        temp_source = temp_dir / "input.doc"
         converted = temp_dir / f"input{target_suffix}"
-        shutil.copyfile(source, temp_source)
+        temp_source.write_bytes(content)
 
         # 1) 先尝试调用 Word COM
         try:
@@ -287,7 +252,7 @@ async def _convert_office_document(path: Path, *, target_suffix: str, extractor)
                     doc.Close(False)
                     word.Quit()
                 if converted.exists():
-                    return await extractor(converted)
+                    return await extractor(converted.read_bytes())
             finally:
                 if converted.exists():
                     converted.unlink()
@@ -313,11 +278,11 @@ async def _convert_office_document(path: Path, *, target_suffix: str, extractor)
             ]
             subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if converted.exists():
-                return await extractor(converted)
+                return await extractor(converted.read_bytes())
         except Exception:
             pass
 
-    raise FileNotFoundError(f"Could not convert legacy office file: {source.name}")
+    raise FileNotFoundError("Could not convert legacy office file")
 
 
 async def parse_multipart_form(
