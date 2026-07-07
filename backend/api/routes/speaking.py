@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from agents.speaking_agent import SpeakingAgent, SpeakingInput
 from config import config
 from infrastructure.object_store import create_object_store
+from utils.api_errors import safe_error_response
 from utils.auth import require_auth
 from utils.auth_contracts import AuthUser
 from utils.storage import json_storage
@@ -164,10 +165,7 @@ async def generate_speaking_items(request: SpeakingGenerateRequest, user: AuthUs
         )
 
     except Exception as exc:
-        return JSONResponse(
-            status_code=500,
-            content={"ok": False, "error": str(exc)},
-        )
+        return safe_error_response(log, exc, "speaking material generation failed")
 
 
 @router.post("/speaking/upload")
@@ -209,10 +207,7 @@ async def upload_speaking_audio(
         )
 
     except Exception as exc:
-        return JSONResponse(
-            status_code=500,
-            content={"ok": False, "error": str(exc)},
-        )
+        return safe_error_response(log, exc, "speaking audio upload failed")
 
 
 def _find_ffmpeg() -> Optional[str]:
@@ -308,7 +303,7 @@ async def evaluate_speaking(request: SpeakingEvaluateRequest, user: AuthUser = D
         return JSONResponse(content={"ok": True, **scores})
 
     except Exception as exc:
-        return JSONResponse(status_code=500, content={"ok": False, "error": str(exc)})
+        return safe_error_response(log, exc, "speaking evaluation failed")
 
 
 # ── History endpoints ──

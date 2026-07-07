@@ -3,6 +3,7 @@
 创建试卷、WebSocket 流式生成、列表、详情、删除、PDF 导出
 """
 import asyncio
+import logging
 import os
 import uuid
 from pathlib import Path
@@ -17,6 +18,7 @@ from agents.paper_agent import PaperAgent, PaperInput
 from core.task_dispatcher import dispatch_generation_task, register_task_handler
 from infrastructure.object_store import create_object_store
 from infrastructure.task_lease import acquire_task_lease, release_task_lease
+from utils.api_errors import raise_safe_http_error, safe_error_response
 from utils.auth import require_auth, require_websocket_auth
 from utils.auth_contracts import AuthUser
 from utils.feature_support import build_selected_files_context
@@ -26,6 +28,7 @@ from config import config
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 PAPER_TASKS: Dict[str, asyncio.Task[Any]] = {}
 
 
@@ -141,8 +144,9 @@ async def _run_paper_generation(paper_id: str) -> None:
     try:
         result = await agent.execute(input_data)
     except Exception as exc:
+        logger.exception("Paper generation failed")
         await json_storage.set(f"paper:{paper_id}:run_state", "failed")
-        await _send_paper_event(paper_id, {"type": "error", "error": str(exc)})
+        await _send_paper_event(paper_id, {"type": "error", "error": "paper generation failed"})
         return
 
     if result.success and result.paper:
@@ -232,8 +236,8 @@ async def create_paper(request: PaperRequest, user: AuthUser = Depends(require_a
                 "events": f"/tasks/paper/{paper_id}/events",
             },
         )
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "paper generation request failed")
 
 
 @router.websocket("/ws/paper")
@@ -265,15 +269,14 @@ async def paper_websocket(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         pass
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
+    except Exception:
+        logger.exception("Paper websocket failed")
         try:
             await json_storage.set(f"paper:{paper_id}:run_state", "failed")
         except Exception:
             pass
         try:
-            await _send_paper_event(paper_id, {"type": "error", "error": str(e)})
+            await _send_paper_event(paper_id, {"type": "error", "error": "paper stream failed"})
         except Exception:
             pass
     finally:
@@ -290,8 +293,8 @@ async def list_papers_handler(user: AuthUser = Depends(require_auth)):
     try:
         papers = await list_papers(user.id, user.username)
         return {"ok": True, "papers": papers}
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "paper list failed")
 
 
 @router.get("/papers/{paper_id}")
@@ -424,8 +427,8 @@ async def export_paper_pdf(paper_id: str, user: AuthUser = Depends(require_auth)
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _build_paper_pdf, questions, meta, out_path)
         file_url = await object_store.put_file(object_key, out_path)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+    except Exception as exc:
+        raise_safe_http_error(logger, exc, "PDF generation failed")
     finally:
         try:
             out_path.unlink()

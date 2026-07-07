@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 import httpx
 
 from config import config
+from urllib.parse import urlparse
 
 
 def _trim_error(text: str, limit: int = 300) -> str:
@@ -73,9 +74,18 @@ def _normalize_base_url(base_url: Optional[str], default: str) -> str:
         base = default
     if base.endswith("/audio/transcriptions"):
         return base
-    if "api.openai.com" in base and not base.endswith("/v1"):
+    if _host_matches(base, "api.openai.com") and not base.endswith("/v1"):
         return base + "/v1"
     return base
+
+
+def _host_matches(url: str, expected_host: str) -> bool:
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return False
+    expected = expected_host.lower()
+    return host == expected or host.endswith(f".{expected}")
 
 
 def _openai_transcription_settings() -> tuple[str, str, str]:
@@ -86,7 +96,7 @@ def _openai_transcription_settings() -> tuple[str, str, str]:
     )
     model = (config.transcription_openai_model or "gpt-4o-mini-transcribe").strip()
 
-    if "deepseek.com" in base_url.lower():
+    if _host_matches(base_url, "deepseek.com"):
         raise ValueError(
             "当前 TRANSCRIPTION_PROVIDER=openai，但转写 base URL 指向 DeepSeek。"
             "DeepSeek 的 OpenAI 兼容接口不支持语音转写。"

@@ -3,6 +3,7 @@
 创建教案、列表、详情、删除、PDF 导出（学术权威主题色）
 """
 import asyncio
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,7 @@ from pydantic import BaseModel
 
 from agents.lesson_plan_agent import LessonPlanAgent, LessonPlanInput
 from infrastructure.object_store import create_object_store
+from utils.api_errors import raise_safe_http_error
 from utils.auth import get_request_user, resolve_user_from_token, require_auth
 from utils.auth_contracts import AuthUser
 from utils.feature_support import build_selected_files_context
@@ -23,6 +25,7 @@ from config import config
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # 学术权威主题色（用于 PDF）
 PDF_THEME = {
@@ -328,8 +331,8 @@ async def export_lesson_plan_pdf(
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _build_lesson_plan_pdf, plan, meta, out_path)
         file_url = await object_store.put_file(object_key, out_path)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+    except Exception as exc:
+        raise_safe_http_error(logger, exc, "PDF generation failed")
     finally:
         try:
             out_path.unlink()

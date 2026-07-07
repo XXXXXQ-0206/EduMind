@@ -2,15 +2,18 @@
 B站视频搜索路由
 通过 Node MCP Bridge 转发查询请求
 """
+import logging
 import os
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 import httpx
+from utils.api_errors import safe_error_response
 from utils.auth import require_auth
 from utils.auth_contracts import AuthUser
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _bridge_base_url() -> str:
@@ -41,12 +44,6 @@ async def bilibili_search(
         return {"ok": True, "keyword": keyword, "items": items or []}
 
     except httpx.RequestError as exc:
-        return JSONResponse(
-            status_code=503,
-            content={"ok": False, "error": f"bilibili bridge unavailable: {exc}"},
-        )
+        return safe_error_response(logger, exc, "bilibili bridge unavailable", status_code=503)
     except Exception as exc:
-        return JSONResponse(
-            status_code=500,
-            content={"ok": False, "error": str(exc)},
-        )
+        return safe_error_response(logger, exc, "bilibili search failed")

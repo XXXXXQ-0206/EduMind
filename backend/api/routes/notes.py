@@ -3,6 +3,7 @@
 与原 Node.js 版本完全兼容
 """
 import asyncio
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,7 @@ from agents.note_agent import NoteAgent, NoteInput
 from core.task_dispatcher import dispatch_generation_task, register_task_handler
 from infrastructure.object_store import create_object_store
 from infrastructure.task_lease import acquire_task_lease, release_task_lease
+from utils.api_errors import safe_error_response
 from utils.auth import require_auth, require_websocket_auth
 from utils.auth_contracts import AuthUser
 from utils.feature_support import build_selected_files_context
@@ -23,6 +25,7 @@ from utils.storage import derive_note_status, json_storage, list_files_for_user,
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class SmartNotesRequest(BaseModel):
@@ -181,7 +184,8 @@ async def _run_note_generation(note_id: str) -> None:
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        err_msg = str(exc).strip() or "generation failed"
+        logger.exception("Smart notes background generation failed")
+        err_msg = "smart notes generation failed"
         await _update_note_meta(note_id, "error", error=err_msg)
         await _broadcast_note_event(note_id, {"type": "error", "error": err_msg})
         return
@@ -291,8 +295,8 @@ async def create_smartnotes(request: SmartNotesRequest, user: AuthUser = Depends
             status_code=202,
         )
 
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "smart notes generation failed")
 
 
 @router.websocket("/ws/smartnotes")
@@ -339,8 +343,8 @@ async def list_smartnotes(user: AuthUser = Depends(require_auth)):
     try:
         notes = await list_notes(user.id, user.username)
         return {"ok": True, "notes": notes}
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "smart notes list failed")
 
 
 @router.get("/smartnotes/{note_id}")
@@ -359,8 +363,8 @@ async def get_smartnote(note_id: str, user: AuthUser = Depends(require_auth)):
         meta["id"] = note_id
         meta["status"] = status
         return {"ok": True, "note": meta, "notes": notes}
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "smart note detail failed")
 
 
 register_task_handler("smartnotes", _run_note_generation_worker)
@@ -385,5 +389,5 @@ async def delete_smartnote(note_id: str, user: AuthUser = Depends(require_auth))
             await create_object_store().delete(object_key)
         await delete_note(note_id)
         return {"ok": True}
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "smart note deletion failed")

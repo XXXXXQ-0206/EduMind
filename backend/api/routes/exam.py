@@ -4,6 +4,7 @@ Exam Labs routes powered by the quiz agent.
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List
@@ -22,6 +23,7 @@ from utils.storage import json_storage, owner_payload, record_belongs_to_user
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 EXAM_TASKS: Dict[str, asyncio.Task[Any]] = {}
 
 
@@ -148,8 +150,9 @@ async def _run_exam_generation(run_id: str) -> None:
     try:
         result = await QuizAgent().execute(QuizInput(topic=prompt, count=count))
     except Exception as exc:
+        logger.exception("Exam generation failed")
         await json_storage.set(f"exam_run:{run_id}:run_state", "failed")
-        await _send_exam_event(run_id, {"type": "error", "error": str(exc)})
+        await _send_exam_event(run_id, {"type": "error", "error": "exam generation failed"})
         return
 
     if not result.success or not result.quiz:
@@ -240,8 +243,9 @@ async def exam_stream(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as exc:
+        logger.exception("Exam websocket failed")
         await json_storage.set(f"exam_run:{run_id}:run_state", "failed")
-        await _send_exam_event(run_id, {"type": "error", "error": str(exc)})
+        await _send_exam_event(run_id, {"type": "error", "error": "exam stream failed"})
     finally:
         forwarder.cancel()
         try:

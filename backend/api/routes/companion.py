@@ -5,11 +5,13 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import logging
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from config import config
 from utils.auth import require_auth
 from utils.auth_contracts import AuthUser
 from utils.feature_support import (
@@ -24,6 +26,7 @@ from utils.parser import extract_text_from_file
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class CompanionHistoryItem(BaseModel):
@@ -44,8 +47,9 @@ def _resolve_direct_path(file_path: str) -> Optional[Path]:
     raw = (file_path or "").strip()
     if not raw:
         return None
-    direct = Path(raw)
-    if direct.exists():
+    direct = Path(raw).resolve()
+    storage_root = config.storage_dir.resolve()
+    if direct.exists() and direct.is_file() and storage_root in direct.parents:
         return direct
     return None
 
@@ -135,8 +139,9 @@ Document context:
             ],
             max_tokens=1800,
         )
-    except Exception as exc:
-        return JSONResponse(content={"ok": False, "error": str(exc)}, status_code=500)
+    except Exception:
+        logger.exception("Companion LLM invocation failed")
+        return JSONResponse(content={"ok": False, "error": "companion generation failed"}, status_code=500)
 
     parsed = safe_json_loads(raw)
     if isinstance(parsed, dict):

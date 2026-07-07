@@ -3,6 +3,7 @@
 与原 Node.js 版本完全兼容
 """
 import asyncio
+import logging
 import uuid
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
@@ -17,6 +18,7 @@ from agents.wrongbook_report_agent import WrongBookReportAgent, WrongBookReportI
 from agents.knowledge_point_agent import KnowledgePointAgent, KnowledgePointInput
 from core.task_dispatcher import dispatch_generation_task, register_task_handler
 from infrastructure.task_lease import acquire_task_lease, release_task_lease
+from utils.api_errors import safe_error_payload, safe_error_response
 from utils.auth import require_auth, require_websocket_auth
 from utils.auth_contracts import AuthUser
 from utils.feature_support import build_selected_files_context
@@ -35,6 +37,7 @@ from config import config
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 _quiz_run_locks: Dict[str, asyncio.Lock] = {}
 _quiz_run_tasks: Dict[str, asyncio.Task] = {}
 
@@ -131,11 +134,8 @@ async def create_quiz(request: QuizRequest, user: AuthUser = Depends(require_aut
             }
         )
 
-    except Exception as e:
-        return JSONResponse(
-            content={"ok": False, "error": str(e)},
-            status_code=500
-        )
+    except Exception as exc:
+        return safe_error_response(logger, exc, "quiz generation request failed")
 
 
 def _get_quiz_lock(quiz_id: str) -> asyncio.Lock:
@@ -303,11 +303,9 @@ async def ensure_quiz_generation_task(quiz_id: str) -> None:
         try:
             await _generate_quiz(quiz_id)
         except Exception as exc:
-            await _update_quiz_status(quiz_id, "error", error=str(exc))
-            await _safe_send_quiz(quiz_id, {"type": "error", "error": str(exc)})
-            import traceback
-            print(f"[ERROR] Quiz background task error: {type(exc).__name__}: {exc!r}")
-            traceback.print_exc()
+            logger.exception("Quiz background task failed")
+            await _update_quiz_status(quiz_id, "error", error="quiz generation failed")
+            await _safe_send_quiz(quiz_id, {"type": "error", "error": "quiz generation failed"})
         finally:
             await release_task_lease(lease)
             if _quiz_run_tasks.get(quiz_id) is task:
@@ -324,8 +322,9 @@ async def run_quiz_generation_worker(quiz_id: str) -> None:
     try:
         await _generate_quiz(quiz_id)
     except Exception as exc:
-        await _update_quiz_status(quiz_id, "error", error=str(exc))
-        await _safe_send_quiz(quiz_id, {"type": "error", "error": str(exc)})
+        logger.exception("Quiz worker failed")
+        await _update_quiz_status(quiz_id, "error", error="quiz generation failed")
+        await _safe_send_quiz(quiz_id, {"type": "error", "error": "quiz generation failed"})
         raise
     finally:
         await release_task_lease(lease)
@@ -373,8 +372,8 @@ async def quiz_websocket(websocket: WebSocket):
 
     except WebSocketDisconnect:
         pass
-    except Exception as e:
-        print(f"[ERROR] Quiz websocket error: {type(e).__name__}: {e!r}")
+    except Exception:
+        logger.exception("Quiz websocket failed")
     finally:
         forwarder.cancel()
         try:
@@ -392,8 +391,8 @@ async def list_quizzes_handler(role: Optional[str] = None, user: AuthUser = Depe
             scope = None
         quizzes = await list_quizzes(scope=scope, user_id=user.id, username=user.username)
         return {"ok": True, "quizzes": quizzes}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+    except Exception as exc:
+        return safe_error_response(logger, exc, "quiz list failed")
 
 
 @router.get("/quizzes/{quiz_id}")
@@ -411,8 +410,8 @@ async def get_quiz_handler(quiz_id: str, user: AuthUser = Depends(require_auth))
         if status in ("pending", "generating", "packaging") and not quiz:
             await dispatch_generation_task("quiz", quiz_id, ensure_quiz_generation_task)
         return {"ok": True, "quiz": meta, "questions": quiz or []}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+    except Exception as exc:
+        return safe_error_response(logger, exc, "quiz detail failed")
 
 
 @router.delete("/quizzes/{quiz_id}")
@@ -428,8 +427,8 @@ async def delete_quiz_handler(quiz_id: str, user: AuthUser = Depends(require_aut
             return JSONResponse(status_code=404, content={"ok": False, "error": "not found"})
         await delete_quiz(quiz_id)
         return {"ok": True}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+    except Exception as exc:
+        return safe_error_response(logger, exc, "quiz deletion failed")
 
 
 @router.get("/quizzes/{quiz_id}/attempts")
@@ -443,8 +442,8 @@ async def get_quiz_attempts_handler(quiz_id: str, user: AuthUser = Depends(requi
             return JSONResponse(status_code=404, content={"ok": False, "error": "not found"})
         attempts = await get_quiz_attempts(quiz_id)
         return {"ok": True, "attempts": attempts}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+    except Exception as exc:
+        return safe_error_response(logger, exc, "quiz attempts load failed")
 
 
 @router.post("/quizzes/{quiz_id}/attempts")
@@ -467,8 +466,8 @@ async def save_quiz_attempts_handler(quiz_id: str, request: QuizAttemptsRequest,
             meta["updated_at"] = datetime.now().isoformat()
             await json_storage.set(f"quiz:{quiz_id}", meta)
         return {"ok": True}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+    except Exception as exc:
+        return safe_error_response(logger, exc, "quiz attempts save failed")
 
 
 @router.post("/quizzes/{quiz_id}/attempts/answer")
@@ -491,8 +490,8 @@ async def upsert_quiz_attempt_answer_handler(quiz_id: str, request: QuizAttemptA
             meta["updated_at"] = datetime.now().isoformat()
             await json_storage.set(f"quiz:{quiz_id}", meta)
         return {"ok": True, "attempt": payload}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+    except Exception as exc:
+        return safe_error_response(logger, exc, "quiz attempt update failed")
 
 
 def _to_ms(value: Optional[str]) -> int:
@@ -729,8 +728,8 @@ async def wrongbook_summary_handler(user: AuthUser = Depends(require_auth)):
             "wrongQuestions": wrong_questions,
             "masteredQuestions": mastered_questions,
         }
-    except Exception as e:
-        return {"ok": False, "error": str(e)}, 500
+    except Exception as exc:
+        return safe_error_payload(logger, exc, "wrong book summary failed"), 500
 
 
 register_task_handler("quiz", run_quiz_generation_worker)
@@ -750,8 +749,8 @@ async def wrongbook_report_handler(user: AuthUser = Depends(require_auth)):
         if not result.success or not result.report:
             return {"ok": False, "error": result.error or "report_failed"}, 500
         return {"ok": True, "report": result.report}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}, 500
+    except Exception as exc:
+        return safe_error_payload(logger, exc, "wrong book report failed"), 500
 
 
 @router.post("/wrongbook/weak-points")
@@ -772,5 +771,5 @@ async def wrongbook_weak_points_handler(user: AuthUser = Depends(require_auth)):
 
         points = result.points if result.points else []
         return {"ok": True, "points": points}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}, 500
+    except Exception as exc:
+        return safe_error_payload(logger, exc, "wrong book weak point extraction failed"), 500

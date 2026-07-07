@@ -4,16 +4,19 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 import json
+import logging
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
 from config import config
+from utils.api_errors import safe_error_payload
 from utils.llm import invoke_llm_local, stream_llm_local
 
 
 router = APIRouter(prefix="/ai")
+logger = logging.getLogger(__name__)
 
 
 class InvokeRequest(BaseModel):
@@ -37,7 +40,7 @@ async def invoke_llm_handler(
         )
         return {"ok": True, "text": text}
     except Exception as exc:
-        return {"ok": False, "error": str(exc)}
+        return safe_error_payload(logger, exc, "ai core invocation failed")
 
 
 @router.post("/internal/invoke/stream")
@@ -58,7 +61,8 @@ async def stream_llm_handler(
                 yield json.dumps({"type": "delta", "delta": chunk}, ensure_ascii=False) + "\n"
             yield json.dumps({"type": "done"}, ensure_ascii=False) + "\n"
         except Exception as exc:
-            yield json.dumps({"type": "error", "error": str(exc)}, ensure_ascii=False) + "\n"
+            logger.exception("AI core streaming invocation failed")
+            yield json.dumps({"type": "error", "error": "ai core streaming failed"}, ensure_ascii=False) + "\n"
 
     return StreamingResponse(
         stream(),

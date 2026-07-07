@@ -3,15 +3,19 @@ Audio transcription API routes.
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import JSONResponse
 
+from utils.api_errors import safe_error_response
 from utils.auth import require_auth
 from utils.auth_contracts import AuthUser
 from utils.transcription import build_study_materials, transcribe_audio_bytes
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/transcriber")
@@ -43,7 +47,4 @@ async def transcribe_audio_handler(
             "studyMaterials": study_materials,
         }
     except Exception as exc:
-        return JSONResponse(
-            status_code=500,
-            content={"ok": False, "error": str(exc)},
-        )
+        return safe_error_response(logger, exc, "audio transcription failed")
