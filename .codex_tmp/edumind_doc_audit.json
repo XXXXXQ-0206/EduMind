@@ -1,0 +1,675 @@
+[
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\2026001333-LinkEdu调研报告.docx",
+    "kind": ".docx",
+    "readable": true,
+    "chars": 10825,
+    "issues": [
+      {
+        "severity": "P2",
+        "title": "仍出现旧项目名或前身名称。",
+        "detail": "命中 39 次：old_project_name"
+      },
+      {
+        "severity": "P1",
+        "title": "后端技术栈疑似仍写为Node/Express；当前主要后端为Python FastAPI。",
+        "detail": "命中 1 次：old_backend_node"
+      },
+      {
+        "severity": "P1",
+        "title": "运行时存储疑似仍写为SQLite/本地JSON/Keyv；当前默认是PostgreSQL、pgvector、Redis、MinIO/S3，旧存储仅用于迁移或本地适配。",
+        "detail": "命中 7 次：old_storage_sqlite"
+      },
+      {
+        "severity": "P2",
+        "title": "前端技术栈疑似与当前React/Vite不一致。",
+        "detail": "命中 2 次：old_frontend"
+      },
+      {
+        "severity": "P2",
+        "title": "缺少当前技术栈关键字",
+        "detail": "未明显覆盖：React、PostgreSQL、pgvector、Redis、MinIO、Celery、api-gateway"
+      }
+    ],
+    "notes": [
+      "OOXML Word文档。"
+    ],
+    "snippets": {
+      "old_project_name": [
+        "本资料仅供内部使用 项目名称 LinkEdu——师生协同的 AI 全场景教育平台 调 研 报 告 LinkEdu 项目组 2026年06月29日 项目修改记录 体系修改记录 目 录 1 产品介绍 1.1",
+        "资料仅供内部使用 项目名称 LinkEdu——师生协同的 AI 全场景教育平台 调 研 报 告 LinkEdu 项目组 2026年06月29日 项目修改记录 体系修改记录 目 录 1 产品介绍 1.1 产品定义 LinkEdu 是一套面向教师、学生及教研团队的师生协同",
+        "组 2026年06月29日 项目修改记录 体系修改记录 目 录 1 产品介绍 1.1 产品定义 LinkEdu 是一套面向教师、学生及教研团队的师生协同 AI 全场景教育平台。系统以“真实教学资料”为输入，以大模型、Agent 编排、多模态生成和学习数据分析为核心能力，"
+      ],
+      "old_backend_node": [
+        "高风险评价或排名。 4 产品发展目标 4.1 近期目标（1-3个月） 修复前端工程化问题，统一 Node.js、依赖版本和构建环境，解决 lint 中类型约束、空语句和未使用变量等问题。 完善教师端和学生端核心路径测试，覆盖登录注册、资料上传、教案生成、智能笔记、测验、"
+      ],
+      "old_storage_sqlite": [
+        "三，全流程覆盖，从资料输入、内容生成到结果沉淀和复盘均有对应模块；第四，轻量部署，当前版本采用 SQLite、JSON 和本地文件系统，不依赖复杂中间件，便于课程展示、校内试点和后续 Docker 化部署。 1.4 产品范围 LinkEdu 适用于中小学、职业院校和教",
+        "e 3、Vite 和 TypeScript，后端采用 Python FastAPI，存储层采用 SQLite、JSON 文件和本地文件系统。该技术组合学习成本相对可控，部署依赖较轻，适合课程设计作品、实验室展示和小规模学校试点。 关键 AI 能力方面，LinkEdu",
+        "渲染；后端负责账户认证、文件解析、上下文构建、模型调用、任务编排、媒体合成和结果存储；存储层由 SQLite、JSON 文件和本地 storage 目录组成。 表 5-1 LinkEdu 产品体系结构 系统设计的关键取舍是“轻量可用优先”。SQLite 与 JSON"
+      ],
+      "old_frontend": [
+        "示。 3.2 技术和时间分析 技术上，LinkEdu 已经形成可运行的前后端分离架构。前端采用 Vue 3、Vite 和 TypeScript，后端采用 Python FastAPI，存储层采用 SQLite、JSON 文件和本地文件系统。该技术组合学习成本相对",
+        "；若生成结果不稳定或学生过度依赖，可能影响学校采纳意愿。 层级 | 组成 | 说明 表现层 | Vue 3、Vite、TypeScript、教师端/学生端页面 | 提供首页、认证页、角色工作台、功能页面和历史记录页面。 接口层 | FastAPI HTTP 接口"
+      ]
+    }
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\6_30第七组提交\\图片\\4A架构图.png",
+    "kind": ".png",
+    "readable": false,
+    "chars": 0,
+    "issues": [],
+    "notes": [
+      "归档或图片文件，本轮只记录，不做正文一致性审阅。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\6_30第七组提交\\图片\\服务调用关系图.png",
+    "kind": ".png",
+    "readable": false,
+    "chars": 0,
+    "issues": [],
+    "notes": [
+      "归档或图片文件，本轮只记录，不做正文一致性审阅。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\6_30第七组提交\\图片\\核心业务流程图.png",
+    "kind": ".png",
+    "readable": false,
+    "chars": 0,
+    "issues": [],
+    "notes": [
+      "归档或图片文件，本轮只记录，不做正文一致性审阅。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\6_30第七组提交\\图片\\系统整体架构图.png",
+    "kind": ".png",
+    "readable": false,
+    "chars": 0,
+    "issues": [],
+    "notes": [
+      "归档或图片文件，本轮只记录，不做正文一致性审阅。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\6_30第七组提交\\项目架构会议记录.doc",
+    "kind": ".doc",
+    "readable": true,
+    "chars": 4320,
+    "issues": [
+      {
+        "severity": "P1",
+        "title": "运行时存储疑似仍写为SQLite/本地JSON/Keyv；当前默认是PostgreSQL、pgvector、Redis、MinIO/S3，旧存储仅用于迁移或本地适配。",
+        "detail": "命中 3 次：old_storage_sqlite"
+      },
+      {
+        "severity": "P2",
+        "title": "前端技术栈疑似与当前React/Vite不一致。",
+        "detail": "命中 2 次：old_frontend"
+      },
+      {
+        "severity": "P2",
+        "title": "缺少当前技术栈关键字",
+        "detail": "未明显覆盖：React、pgvector、MinIO、Celery、api-gateway"
+      }
+    ],
+    "notes": [
+      "旧版二进制Word文档，仅做近似文本抽取；建议用Word/LibreOffice转换后复核。"
+    ],
+    "snippets": {
+      "old_storage_sqlite": [
+        "用于核对 Vue 3/Vite/TypeScript 前端 Python FastAPI 后端 SQLite/JSON/本地文件存储 Docker Compose 公网部署 WebSocket 进度反馈和外部 AI 服务配置 发言记录 记录发言人的观点 意见和建议 1",
+        "意见和建议 1. 关于架构现状 现有文档已说明系统采用 Vue 3 前端 FastAPI 后端 SQLite + JSON + 本地文件系统的轻量化存储 并通过 HTTP 接口与 WebSocket 接口支撑教师端 学生端和长耗时生成任务 但文档仍主要呈现为前后端分离",
+        "保证前端可以持续展示 创建任务-执行中-完成/失败 4. 关于数据与资源 原型阶段可继续保留 SQLite JSON 文件和本地 storage 的轻量化方案 但最终架构设计文档需要明确服务数据归属 文件资源目录 用户与角色隔离规则 生成结果 owner_id/ow"
+      ],
+      "old_frontend": [
+        "核对功能需求 接口需求 数据需求 非功能需求和运行环境规定 2. 项目源码与部署材料 用于核对 Vue 3/Vite/TypeScript 前端 Python FastAPI 后端 SQLite/JSON/本地文件存储 Docker Compose 公网部署 W",
+        "服务配置 发言记录 记录发言人的观点 意见和建议 1. 关于架构现状 现有文档已说明系统采用 Vue 3 前端 FastAPI 后端 SQLite + JSON + 本地文件系统的轻量化存储 并通过 HTTP 接口与 WebSocket 接口支撑教师端 学生端"
+      ]
+    }
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\6_30第七组提交.zip",
+    "kind": ".zip",
+    "readable": false,
+    "chars": 0,
+    "issues": [],
+    "notes": [
+      "归档或图片文件，本轮只记录，不做正文一致性审阅。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\7月1日第7组提交\\EduMind数据库设计说明书.doc",
+    "kind": ".doc",
+    "readable": false,
+    "chars": 0,
+    "issues": [
+      {
+        "severity": "P2",
+        "title": "无法可靠抽取正文",
+        "detail": "OOXML Word文档。"
+      }
+    ],
+    "notes": [
+      "OOXML Word文档。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\7月1日第7组提交\\详细设计说明书模板.doc",
+    "kind": ".doc",
+    "readable": true,
+    "chars": 10462,
+    "issues": [
+      {
+        "severity": "P1",
+        "title": "运行时存储疑似仍写为SQLite/本地JSON/Keyv；当前默认是PostgreSQL、pgvector、Redis、MinIO/S3，旧存储仅用于迁移或本地适配。",
+        "detail": "命中 4 次：old_storage_sqlite"
+      },
+      {
+        "severity": "P2",
+        "title": "前端技术栈疑似与当前React/Vite不一致。",
+        "detail": "命中 1 次：old_frontend"
+      }
+    ],
+    "notes": [
+      "旧版二进制Word文档，仅做近似文本抽取；建议用Word/LibreOffice转换后复核。"
+    ],
+    "snippets": {
+      "old_storage_sqlite": [
+        "配套 为满足生产级可靠性 可扩展性和教学资料问答可信度要求 本详细设计在现有项目代码基础上 将 SQLite/JSON 改造为 PostgreSQL + pgvector 将简单 RAG 改造为混合检索 RAG + 引用溯源 将长任务改造为 Celery + Redi",
+        "和 RAG 数据访问 users sessions generation_tasks 等 替代 SQLite/JSON 主存储 document_chunks.embedding 保存向量并支持语义检索 ObjectStore 保存上传文件和生成产物 流程描述 启动时",
+        "vector cosine 索引 业务写入统一通过 repository 禁止生产路径直接写 SQLite 或 JSON 文件 迁移脚本将旧 storage/ SQLite JSON 数据导入 PostgreSQL 和 MinIO 用户权限 控制方式 student"
+      ],
+      "old_frontend": [
+        "并使用同批模板的公文版式复刻 2 程序系统的结构 2.1 系统应用架构 2.1.1 层次结构图 Vue 3 前端 Nginx 提供教师端/学生端页面 统一后端入口 旧路径兼容和实时连接入口 identity learning-content asset-libr"
+      ]
+    }
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\7月1日第7组提交.zip",
+    "kind": ".zip",
+    "readable": false,
+    "chars": 0,
+    "issues": [],
+    "notes": [
+      "归档或图片文件，本轮只记录，不做正文一致性审阅。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\EduMind-智教-4A安全架构图.puml",
+    "kind": ".puml",
+    "readable": true,
+    "chars": 3557,
+    "issues": [],
+    "notes": [
+      "PlantUML源文件。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\EduMind-智教-分布式RAG系统整体架构图-精简版.puml",
+    "kind": ".puml",
+    "readable": true,
+    "chars": 2770,
+    "issues": [],
+    "notes": [
+      "PlantUML源文件。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\EduMind-智教-分布式RAG系统整体架构图.puml",
+    "kind": ".puml",
+    "readable": true,
+    "chars": 7352,
+    "issues": [
+      {
+        "severity": "P1",
+        "title": "运行时存储疑似仍写为SQLite/本地JSON/Keyv；当前默认是PostgreSQL、pgvector、Redis、MinIO/S3，旧存储仅用于迁移或本地适配。",
+        "detail": "命中 1 次：old_storage_sqlite"
+      },
+      {
+        "severity": "P2",
+        "title": "前端技术栈疑似与当前React/Vite不一致。",
+        "detail": "命中 2 次：old_frontend"
+      }
+    ],
+    "notes": [
+      "PlantUML源文件。"
+    ],
+    "snippets": {
+      "old_storage_sqlite": [
+        "通过 WebSocket 返回 end note note bottom of RDB 现有 SQLite 可作为单机原型。 分布式部署建议迁移为 PostgreSQL / MySQL， 并保留 Redis、对象存储和向量库作为独立服务。 end note @en"
+      ],
+      "old_frontend": [
+        "ctor \"教师 / 学生 / 管理员\" as User rectangle \"前端访问层\\nVue3 Web 前端\\n教师端 / 学生端 / 文件库 / 历史记录\" as Frontend rectangle \"网关接入层\\nNginx / API Gate",
+        "园网\" as Net node \"客户端层\" { component \"Web 浏览器\\nVue3 + Vite + TypeScript\" as Browser component \"教师端工作台\\nLessonPlan / Quiz / Paper"
+      ]
+    }
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\EduMind-智教-服务调用关系图.puml",
+    "kind": ".puml",
+    "readable": true,
+    "chars": 3091,
+    "issues": [
+      {
+        "severity": "P2",
+        "title": "前端技术栈疑似与当前React/Vite不一致。",
+        "detail": "命中 1 次：old_frontend"
+      }
+    ],
+    "notes": [
+      "PlantUML源文件。"
+    ],
+    "snippets": {
+      "old_frontend": [
+        "tor \"教师 / 学生 / 管理员\" as User rectangle \"Web 前端\\nVue3\" as Frontend rectangle \"API Gateway\\nNginx / 统一入口\" as Gateway package \"后端服务集群"
+      ]
+    }
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\EduMind-智教-核心业务流程图.puml",
+    "kind": ".puml",
+    "readable": true,
+    "chars": 1054,
+    "issues": [],
+    "notes": [
+      "PlantUML源文件。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\EduMind接口文档.docx",
+    "kind": ".docx",
+    "readable": true,
+    "chars": 60375,
+    "issues": [],
+    "notes": [
+      "OOXML Word文档。",
+      "当前代码路由 107 个，文档提取路径 95 个。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\EduMind数据库设计说明书.doc",
+    "kind": ".doc",
+    "readable": false,
+    "chars": 0,
+    "issues": [
+      {
+        "severity": "P2",
+        "title": "无法可靠抽取正文",
+        "detail": "OOXML Word文档。"
+      }
+    ],
+    "notes": [
+      "OOXML Word文档。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\EduMind（智教）调研报告.doc",
+    "kind": ".doc",
+    "readable": true,
+    "chars": 16192,
+    "issues": [
+      {
+        "severity": "P1",
+        "title": "运行时存储疑似仍写为SQLite/本地JSON/Keyv；当前默认是PostgreSQL、pgvector、Redis、MinIO/S3，旧存储仅用于迁移或本地适配。",
+        "detail": "命中 6 次：old_storage_sqlite"
+      },
+      {
+        "severity": "P2",
+        "title": "前端技术栈疑似与当前React/Vite不一致。",
+        "detail": "命中 1 次：old_frontend"
+      },
+      {
+        "severity": "P2",
+        "title": "缺少当前技术栈关键字",
+        "detail": "未明显覆盖：React、PostgreSQL、pgvector、Redis、MinIO、Celery、api-gateway"
+      }
+    ],
+    "notes": [
+      "旧版二进制Word文档，仅做近似文本抽取；建议用Word/LibreOffice转换后复核。"
+    ],
+    "snippets": {
+      "old_storage_sqlite": [
+        "历史记录 全流程覆盖 从资料输入 内容生成到结果沉淀和复盘均有对应模块 轻量部署 当前版本采用 SQLite JSON 和本地文件系统 不依赖复杂中间件 便于课程展示 校内试点和后续 Docker 化部署 EduMind 适用于中小学 职业院校和教研团队中的教学辅助场",
+        "习缺少连续记录 学习形式单一 基层学校 优质资源获取不足 部署预算有限 教师培训和维护成本敏感 SQLite/JSON/本地文件轻量部署 双角色工作台 可公网展示和本地运行 需要沉淀资料 复盘教学过程 对比不同资源生成效果 历史记录 任务结果持久化 资料一致性评测 表",
+        "展示和结果渲染 后端负责账户认证 文件解析 上下文构建 任务编排 媒体合成和结果存储 存储层由 SQLite JSON 文件和本地 storage 目录组成 Vue 3 Vite TypeScript 教师端/学生端页面 提供首页 功能页面和历史记录页面 FastAP"
+      ],
+      "old_frontend": [
+        "排 媒体合成和结果存储 存储层由 SQLite JSON 文件和本地 storage 目录组成 Vue 3 Vite TypeScript 教师端/学生端页面 提供首页 功能页面和历史记录页面 FastAPI HTTP 接口 WebSocket 进度通道 HTT"
+      ]
+    }
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\EduMind（智教）软件需求说明书.doc",
+    "kind": ".doc",
+    "readable": true,
+    "chars": 19270,
+    "issues": [
+      {
+        "severity": "P1",
+        "title": "后端技术栈疑似仍写为Node/Express；当前主要后端为Python FastAPI。",
+        "detail": "命中 2 次：old_backend_node"
+      },
+      {
+        "severity": "P1",
+        "title": "运行时存储疑似仍写为SQLite/本地JSON/Keyv；当前默认是PostgreSQL、pgvector、Redis、MinIO/S3，旧存储仅用于迁移或本地适配。",
+        "detail": "命中 3 次：old_storage_sqlite"
+      },
+      {
+        "severity": "P2",
+        "title": "可能包含旧端口；当前部署入口主要为80/5000，服务端口为5101-5106，Bilibili桥为5001。",
+        "detail": "命中 2 次：old_ports"
+      },
+      {
+        "severity": "P2",
+        "title": "前端技术栈疑似与当前React/Vite不一致。",
+        "detail": "命中 2 次：old_frontend"
+      },
+      {
+        "severity": "P2",
+        "title": "缺少当前技术栈关键字",
+        "detail": "未明显覆盖：React、PostgreSQL、pgvector、MinIO、Celery、api-gateway"
+      }
+    ],
+    "notes": [
+      "旧版二进制Word文档，仅做近似文本抽取；建议用Word/LibreOffice转换后复核。"
+    ],
+    "snippets": {
+      "old_backend_node": [
+        "型 配置要求 本地开发机 Windows macOS 或 Linux Python 3.10+ Node.js 18+ npm 9+ ffmpeg 推荐使用 Chrome 或 Edge 浏览器 公网部署服务器 Ubuntu 20.04/22.04 或 CentOS 7/",
+        "目录 7 文档结构图 文档结构图 Char 正文文本 目录 5 大模型调用依赖 前端运行环境 Node.js 18+/20+ Vue 3 TypeScript 状态管理和图表可视化组件 存储组件 JSON 文件 本地文件系统 storage/ 当前版本不依赖 MySQ"
+      ],
+      "old_storage_sqlite": [
+        "tAPI 实现认证鉴权 业务处理 资料解析 Agent 编排 生成任务和历史记录管理 系统使用 SQLite JSON 文件和本地文件系统进行轻量化混合存储 并通过 Docker Compose 支持公网部署 系统集成多 Agent 编排 RAG 增强生成 LoRA",
+        "Agent WebSocket 进度反馈和多模态流水线提升复杂生成任务的可控性 通过本地文件 SQLite JSON 与 Docker 部署降低系统部署和迁移成本 用户类型 熟悉课程内容和课堂流程 希望快速完成教案 视频等资源组织 对生成内容准确性 可导出性和历史回",
+        "生成内容用于辅助教学设计和学习支持 教师和学生应结合实际教学场景自行核验准确性 本项目当前采用 SQLite JSON 和本地文件系统进行轻量化存储 适用于原型系统和课程设计展示 大规模生产环境需进一步评估并扩展存储 权限和监控能力 的核心功能需求围绕双角色工作台展开"
+      ],
+      "old_ports": [
+        "访问接口 浏览器访问前端开发服务或生产静态站点 开发环境默认 http://localhost:5173 生产环境可通过 80/443 端口访问 用户浏览器 需支持教师端 学生端路由和静态资源加载 后端 HTTP API 提供认证 文件上传 记录查询等业务接口 J",
+        "TLS 可选外部服务 语音评测服务 接口/配置 前端开发地址 http://localhost:5173 后端开发地址 http://localhost:5000 或 http://127.0.0.1:5000 后端健康检查 http://localhost:50"
+      ],
+      "old_frontend": [
+        "学原型验证 也面向县域学校 基层学校等场景的轻量化部署和应用验证 采用前后端分离架构 前端基于 Vue 3 Vite TypeScript 实现教师端和学生端页面交互 后端基于 Python FastAPI 实现认证鉴权 业务处理 资料解析 Agent 编排 生",
+        "图 Char 正文文本 目录 5 大模型调用依赖 前端运行环境 Node.js 18+/20+ Vue 3 TypeScript 状态管理和图表可视化组件 存储组件 JSON 文件 本地文件系统 storage/ 当前版本不依赖 MySQL Redis 等复杂中"
+      ]
+    }
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\EduMind（智教）软件需求说明书（初版）.docx",
+    "kind": ".docx",
+    "readable": true,
+    "chars": 14224,
+    "issues": [
+      {
+        "severity": "P1",
+        "title": "后端技术栈疑似仍写为Node/Express；当前主要后端为Python FastAPI。",
+        "detail": "命中 2 次：old_backend_node"
+      },
+      {
+        "severity": "P1",
+        "title": "运行时存储疑似仍写为SQLite/本地JSON/Keyv；当前默认是PostgreSQL、pgvector、Redis、MinIO/S3，旧存储仅用于迁移或本地适配。",
+        "detail": "命中 4 次：old_storage_sqlite"
+      },
+      {
+        "severity": "P2",
+        "title": "可能包含旧端口；当前部署入口主要为80/5000，服务端口为5101-5106，Bilibili桥为5001。",
+        "detail": "命中 2 次：old_ports"
+      },
+      {
+        "severity": "P2",
+        "title": "前端技术栈疑似与当前React/Vite不一致。",
+        "detail": "命中 2 次：old_frontend"
+      },
+      {
+        "severity": "P2",
+        "title": "缺少当前技术栈关键字",
+        "detail": "未明显覆盖：React、PostgreSQL、pgvector、MinIO、Celery、api-gateway"
+      }
+    ],
+    "notes": [
+      "OOXML Word文档。"
+    ],
+    "snippets": {
+      "old_backend_node": [
+        "配置要求 本地开发机 | Windows、macOS 或 Linux；Python 3.10+；Node.js 18+；npm 9+；ffmpeg；Git；推荐使用 Chrome 或 Edge 浏览器。 公网部署服务器 | Ubuntu 20.04/22.04 或 Ce",
+        "stAPI、Uvicorn、文档解析工具、PDF 导出工具、大模型调用依赖。 前端运行环境 | Node.js 18+/20+、npm、Vue 3、Vite、TypeScript、路由、状态管理和图表可视化组件。 存储组件 | SQLite、JSON 文件、本地文件系统"
+      ],
+      "old_storage_sqlite": [
+        "tAPI 实现认证鉴权、业务处理、资料解析、Agent 编排、生成任务和历史记录管理。系统使用 SQLite、JSON 文件和本地文件系统进行轻量化混合存储，并通过 Docker Compose 支持公网部署。 系统集成多 Agent 编排、RAG 增强生成、LoRA",
+        "Agent、WebSocket 进度反馈和多模态流水线提升复杂生成任务的可控性。 通过本地文件、SQLite、JSON 与 Docker 部署降低系统部署和迁移成本。 3.2. 用户特点 3.3. 假定和约束 用户使用 Chrome、Edge 等现代浏览器访问系统，浏",
+        "成内容用于辅助教学设计和学习支持，教师和学生应结合实际教学场景自行核验准确性。 本项目当前采用 SQLite、JSON 和本地文件系统进行轻量化存储，适用于原型系统和课程设计展示；大规模生产环境需进一步评估并扩展存储、权限和监控能力。 4. 具体需求 4.1. 功能简"
+      ],
+      "old_ports": [
+        "接口 | 浏览器访问前端开发服务或生产静态站点。开发环境默认 http://localhost:5173，生产环境可通过 80/443 端口访问。 | 用户浏览器、前端页面 | 需支持教师端、学生端路由和静态资源加载。 后端 HTTP API | 提供认证、文件上",
+        "CP Bridge。 接口/配置 | 说明 前端开发地址 | http://localhost:5173 后端开发地址 | http://localhost:5000 或 http://127.0.0.1:5000 后端健康检查 | http://localhos"
+      ],
+      "old_frontend": [
+        "部署和应用验证。 2.1.2. 产品介绍 EduMind（智教） 采用前后端分离架构，前端基于 Vue 3、Vite、TypeScript 实现教师端和学生端页面交互，后端基于 Python FastAPI 实现认证鉴权、业务处理、资料解析、Agent 编排、生",
+        "、PDF 导出工具、大模型调用依赖。 前端运行环境 | Node.js 18+/20+、npm、Vue 3、Vite、TypeScript、路由、状态管理和图表可视化组件。 存储组件 | SQLite、JSON 文件、本地文件系统 storage/；当前版本不依"
+      ]
+    }
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\EduMind（智教）项目进度计划表.xls",
+    "kind": ".xls",
+    "readable": false,
+    "chars": 0,
+    "issues": [
+      {
+        "severity": "P2",
+        "title": "无法可靠抽取正文",
+        "detail": "表格文件无法可靠抽取：File contains no valid workbook part"
+      }
+    ],
+    "notes": [
+      "表格文件无法可靠抽取：File contains no valid workbook part"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\EduMind（智教）项目进度计划表（初版）.xlsx",
+    "kind": ".xlsx",
+    "readable": true,
+    "chars": 26402,
+    "issues": [
+      {
+        "severity": "P2",
+        "title": "仍出现旧项目名或前身名称。",
+        "detail": "命中 250 次：old_project_name"
+      },
+      {
+        "severity": "P1",
+        "title": "运行时存储疑似仍写为SQLite/本地JSON/Keyv；当前默认是PostgreSQL、pgvector、Redis、MinIO/S3，旧存储仅用于迁移或本地适配。",
+        "detail": "命中 1 次：old_storage_sqlite"
+      },
+      {
+        "severity": "P2",
+        "title": "前端技术栈疑似与当前React/Vite不一致。",
+        "detail": "命中 1 次：old_frontend"
+      }
+    ],
+    "notes": [
+      "OOXML表格文档。"
+    ],
+    "snippets": {
+      "old_project_name": [
+        "Project Basic Info 项目基本信息 项目名称 project name | LinkEdu——师生协同的 AI 全场景教育平台 | 项目编号 project code | 2026001333 | 总任务数 | 已完成 | 项目周期 | 团队成员 编",
+        ":00:00 | 14 | 已完成 | 1 | ● | ● 14 | 测试与评测 | 功能测试、LinkEdu-QA Benchmark、质量指标统计 | 成员4 | 2026-06-01 00:00:00 | 2026-06-14 00:00:00 | 14 | 已完",
+        "o + Project Schedule） 2. 文档/2026001333-作品报告.pdf（LinkEdu 功能、架构、算法、测试与部署内容） 3. 文档/2026001333-LinkEdu调研报告.docx（调研结论与产品发展目标） | 参考依据： 1. 04-"
+      ],
+      "old_storage_sqlite": [
+        "| 14 | 已完成 | 1 | ● | ● 3 | 环境搭建 | FastAPI、Vue3、SQLite、JSON 存储和项目目录初始化 | 成员1 | 2026-03-16 00:00:00 | 2026-03-29 00:00:00 | 14 | 已完成 |"
+      ],
+      "old_frontend": [
+        "00:00 | 14 | 已完成 | 1 | ● | ● 3 | 环境搭建 | FastAPI、Vue3、SQLite、JSON 存储和项目目录初始化 | 成员1 | 2026-03-16 00:00:00 | 2026-03-29 00:00:00 | 14"
+      ]
+    }
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\LinkEdu-分布式RAG系统整体架构图.puml",
+    "kind": ".puml",
+    "readable": true,
+    "chars": 6110,
+    "issues": [
+      {
+        "severity": "P1",
+        "title": "运行时存储疑似仍写为SQLite/本地JSON/Keyv；当前默认是PostgreSQL、pgvector、Redis、MinIO/S3，旧存储仅用于迁移或本地适配。",
+        "detail": "命中 1 次：old_storage_sqlite"
+      },
+      {
+        "severity": "P2",
+        "title": "前端技术栈疑似与当前React/Vite不一致。",
+        "detail": "命中 1 次：old_frontend"
+      }
+    ],
+    "notes": [
+      "PlantUML源文件。"
+    ],
+    "snippets": {
+      "old_storage_sqlite": [
+        "通过 WebSocket 返回 end note note bottom of RDB 现有 SQLite 可作为单机原型。 分布式部署建议迁移为 PostgreSQL / MySQL， 并保留 Redis、对象存储和向量库作为独立服务。 end note @en"
+      ],
+      "old_frontend": [
+        "园网\" as Net node \"客户端层\" { component \"Web 浏览器\\nVue3 + Vite + TypeScript\" as Browser component \"教师端工作台\\nLessonPlan / Quiz / Paper"
+      ]
+    }
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\~$uMind接口文档.docx",
+    "kind": ".docx",
+    "readable": false,
+    "chars": 0,
+    "issues": [],
+    "notes": [
+      "Word临时锁文件，跳过。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\图片\\4A架构图.png",
+    "kind": ".png",
+    "readable": false,
+    "chars": 0,
+    "issues": [],
+    "notes": [
+      "归档或图片文件，本轮只记录，不做正文一致性审阅。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\图片\\服务调用关系图.png",
+    "kind": ".png",
+    "readable": false,
+    "chars": 0,
+    "issues": [],
+    "notes": [
+      "归档或图片文件，本轮只记录，不做正文一致性审阅。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\图片\\核心业务流程图.png",
+    "kind": ".png",
+    "readable": false,
+    "chars": 0,
+    "issues": [],
+    "notes": [
+      "归档或图片文件，本轮只记录，不做正文一致性审阅。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\图片\\系统整体架构图.png",
+    "kind": ".png",
+    "readable": false,
+    "chars": 0,
+    "issues": [],
+    "notes": [
+      "归档或图片文件，本轮只记录，不做正文一致性审阅。"
+    ],
+    "snippets": {}
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\详细设计说明书模板.doc",
+    "kind": ".doc",
+    "readable": true,
+    "chars": 10462,
+    "issues": [
+      {
+        "severity": "P1",
+        "title": "运行时存储疑似仍写为SQLite/本地JSON/Keyv；当前默认是PostgreSQL、pgvector、Redis、MinIO/S3，旧存储仅用于迁移或本地适配。",
+        "detail": "命中 4 次：old_storage_sqlite"
+      },
+      {
+        "severity": "P2",
+        "title": "前端技术栈疑似与当前React/Vite不一致。",
+        "detail": "命中 1 次：old_frontend"
+      }
+    ],
+    "notes": [
+      "旧版二进制Word文档，仅做近似文本抽取；建议用Word/LibreOffice转换后复核。"
+    ],
+    "snippets": {
+      "old_storage_sqlite": [
+        "配套 为满足生产级可靠性 可扩展性和教学资料问答可信度要求 本详细设计在现有项目代码基础上 将 SQLite/JSON 改造为 PostgreSQL + pgvector 将简单 RAG 改造为混合检索 RAG + 引用溯源 将长任务改造为 Celery + Redi",
+        "和 RAG 数据访问 users sessions generation_tasks 等 替代 SQLite/JSON 主存储 document_chunks.embedding 保存向量并支持语义检索 ObjectStore 保存上传文件和生成产物 流程描述 启动时",
+        "vector cosine 索引 业务写入统一通过 repository 禁止生产路径直接写 SQLite 或 JSON 文件 迁移脚本将旧 storage/ SQLite JSON 数据导入 PostgreSQL 和 MinIO 用户权限 控制方式 student"
+      ],
+      "old_frontend": [
+        "并使用同批模板的公文版式复刻 2 程序系统的结构 2.1 系统应用架构 2.1.1 层次结构图 Vue 3 前端 Nginx 提供教师端/学生端页面 统一后端入口 旧路径兼容和实时连接入口 identity learning-content asset-libr"
+      ]
+    }
+  },
+  {
+    "path": "D:\\大三下实训\\EduMind\\EduMind\\文档\\EduMind文档\\项目架构会议记录.doc",
+    "kind": ".doc",
+    "readable": true,
+    "chars": 4320,
+    "issues": [
+      {
+        "severity": "P1",
+        "title": "运行时存储疑似仍写为SQLite/本地JSON/Keyv；当前默认是PostgreSQL、pgvector、Redis、MinIO/S3，旧存储仅用于迁移或本地适配。",
+        "detail": "命中 3 次：old_storage_sqlite"
+      },
+      {
+        "severity": "P2",
+        "title": "前端技术栈疑似与当前React/Vite不一致。",
+        "detail": "命中 2 次：old_frontend"
+      },
+      {
+        "severity": "P2",
+        "title": "缺少当前技术栈关键字",
+        "detail": "未明显覆盖：React、pgvector、MinIO、Celery、api-gateway"
+      }
+    ],
+    "notes": [
+      "旧版二进制Word文档，仅做近似文本抽取；建议用Word/LibreOffice转换后复核。"
+    ],
+    "snippets": {
+      "old_storage_sqlite": [
+        "用于核对 Vue 3/Vite/TypeScript 前端 Python FastAPI 后端 SQLite/JSON/本地文件存储 Docker Compose 公网部署 WebSocket 进度反馈和外部 AI 服务配置 发言记录 记录发言人的观点 意见和建议 1",
+        "意见和建议 1. 关于架构现状 现有文档已说明系统采用 Vue 3 前端 FastAPI 后端 SQLite + JSON + 本地文件系统的轻量化存储 并通过 HTTP 接口与 WebSocket 接口支撑教师端 学生端和长耗时生成任务 但文档仍主要呈现为前后端分离",
+        "保证前端可以持续展示 创建任务-执行中-完成/失败 4. 关于数据与资源 原型阶段可继续保留 SQLite JSON 文件和本地 storage 的轻量化方案 但最终架构设计文档需要明确服务数据归属 文件资源目录 用户与角色隔离规则 生成结果 owner_id/ow"
+      ],
+      "old_frontend": [
+        "核对功能需求 接口需求 数据需求 非功能需求和运行环境规定 2. 项目源码与部署材料 用于核对 Vue 3/Vite/TypeScript 前端 Python FastAPI 后端 SQLite/JSON/本地文件存储 Docker Compose 公网部署 W",
+        "服务配置 发言记录 记录发言人的观点 意见和建议 1. 关于架构现状 现有文档已说明系统采用 Vue 3 前端 FastAPI 后端 SQLite + JSON + 本地文件系统的轻量化存储 并通过 HTTP 接口与 WebSocket 接口支撑教师端 学生端"
+      ]
+    }
+  }
+]

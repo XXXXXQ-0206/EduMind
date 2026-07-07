@@ -1,0 +1,209 @@
+﻿@startuml
+title EduMind（智教）分布式 RAG 系统整体架构图
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName "Microsoft YaHei"
+skinparam defaultFontSize 13
+skinparam packageStyle rectangle
+skinparam ArrowColor #34495E
+skinparam RectangleBorderColor #5B6B7A
+skinparam RectangleBackgroundColor #F8FBFF
+skinparam DatabaseBorderColor #5B6B7A
+skinparam QueueBorderColor #5B6B7A
+
+actor "教师" as Teacher
+actor "学生" as Student
+actor "教研/管理员" as Admin
+
+cloud "公网 / 校园网" as Net
+
+node "客户端层" {
+  component "Web 浏览器\nReact 19 + Vite + TypeScript" as Browser
+  component "教师端工作台\nLessonPlan / Quiz / Paper / Slides / TeachingVideo" as TeacherUI
+  component "学生端工作台\nSmartNotes / FlashCards / WrongBook / Podcast / Speaking" as StudentUI
+  component "文件库与历史记录\nFileLibrary / TeachingRecords / LearningRecords" as CommonUI
+}
+
+node "接入层 / 边缘层" {
+  component "CDN / 静态资源服务" as CDN
+  component "Nginx / Ingress\nHTTPS / 反向代理 / 负载均衡" as Nginx
+  component "API Gateway\n路由聚合 / 限流 / CORS / WebSocket 转发" as Gateway
+}
+
+node "分布式业务服务层\nFastAPI 微服务集群" {
+  component "Auth Service\n注册登录 / Token / RBAC / 双角色隔离" as AuthSvc
+  component "User & Session Service\n用户资料 / 会话 / scope 管理" as UserSvc
+  component "File Service\n上传 / 下载 / 文件元数据 / 权限校验" as FileSvc
+  component "Chat & RAG API\n资料增强问答 / Prompt 组装 / 流式回答" as RagApi
+  component "Teacher Service\n教案 / 测验 / 试卷 / 教学记录" as TeacherSvc
+  component "Student Service\n笔记 / 卡片 / 错题本 / 学习记录" as StudentSvc
+  component "Multimodal Service\n幻灯片 / 播客 / 口语 / 教学视频" as MultiSvc
+  component "Bilibili Service\nB 站视频学习与备课" as BiliSvc
+  component "WebSocket Service\n任务进度 / 流式输出 / 状态通知" as WsSvc
+}
+
+queue "消息队列\nRedis / Celery broker" as MQ
+queue "任务调度器\nCelery / Redis / generation-worker" as Scheduler
+
+node "Agent 与异步 Worker 集群" {
+  component "BaseAgent\n统一模型调用与工具封装" as BaseAgent
+  component "LessonPlanAgent" as LessonAgent
+  component "NoteAgent" as NoteAgent
+  component "QuizAgent / PaperAgent" as QuizAgent
+  component "FlashcardsAgent" as FlashAgent
+  component "KnowledgePointAgent\n薄弱知识点识别" as KnowledgeAgent
+  component "SlidesAgent" as SlidesAgent
+  component "PodcastAgent\nTTS + ffmpeg" as PodcastAgent
+  component "SpeakingAgent\nASR / 口语评价" as SpeakingAgent
+  component "TeachingVideoAgent\n脚本 / 配音 / 视频合成" as VideoAgent
+}
+
+node "RAG 知识处理链路" {
+  component "文档解析器\nPDF / DOCX / Markdown / TXT" as Parser
+  component "清洗与切分\n去噪 / Chunk / 元数据标注" as Chunker
+  component "Embedding Service\n向量化 / 批处理 / 缓存" as EmbedSvc
+  database "Vector DB\npgvector\nchunk_id / embedding / metadata" as VectorDB
+  component "Retriever\nTopK 检索 / 权限过滤 / 多路召回" as Retriever
+  component "Reranker\n重排 / 去重 / 引用片段选择" as Reranker
+  component "Prompt Builder\n角色自适应 / 资料引用 / 输出约束" as PromptBuilder
+}
+
+node "模型与外部 AI 能力层" {
+  component "LLM Gateway\n模型路由 / Key 管理 / 熔断降级" as LLMGateway
+  component "通用大模型 API\nOpenAI / DeepSeek / 通义 / 智谱等" as CloudLLM
+  component "本地教育模型\nLoRA Adapter / 轻量问答" as LocalLLM
+  component "TTS / ASR 服务" as SpeechAI
+  component "图像/视频生成服务" as MediaAI
+  component "Bilibili MCP Bridge" as BiliBridge
+}
+
+node "数据与存储层" {
+  database "关系数据库\nPostgreSQL / pgvector\nusers / sessions / chats / permissions" as RDB
+  database "Redis\nSession 缓存 / 限流 / 任务状态" as Redis
+  database "对象存储\nMinIO / OSS / 本地 storage\nPDF / 图片 / 音频 / 视频" as ObjectStore
+  database "JSON 结果库\n教案 / 笔记 / 测验 / 播客 / 视频任务结果" as JsonStore
+  database "日志与审计库\n访问日志 / 模型调用 / 内容审核记录" as AuditDB
+}
+
+node "运维与安全层" {
+  component "Docker / Kubernetes\n服务编排 / 横向扩展 / 滚动发布" as K8s
+  component "Prometheus + Grafana\n指标监控 / 告警" as Monitor
+  component "ELK / Loki\n日志检索 / 链路排错" as Logs
+  component "内容安全与合规\n敏感词 / 未成年人保护 / 人工审核" as Safety
+}
+
+Teacher --> Browser
+Student --> Browser
+Admin --> Browser
+Browser --> TeacherUI
+Browser --> StudentUI
+Browser --> CommonUI
+Browser --> Net
+Net --> CDN
+Net --> Nginx
+CDN --> Browser : 静态资源
+Nginx --> Gateway : HTTPS API / WebSocket
+
+Gateway --> AuthSvc
+Gateway --> UserSvc
+Gateway --> FileSvc
+Gateway --> RagApi
+Gateway --> TeacherSvc
+Gateway --> StudentSvc
+Gateway --> MultiSvc
+Gateway --> BiliSvc
+Gateway --> WsSvc
+
+AuthSvc --> RDB
+AuthSvc --> Redis
+UserSvc --> RDB
+FileSvc --> ObjectStore
+FileSvc --> RDB
+TeacherSvc --> JsonStore
+StudentSvc --> JsonStore
+TeacherSvc --> MQ : 生成任务
+StudentSvc --> MQ : 生成任务
+MultiSvc --> MQ : 多模态任务
+WsSvc --> Redis : 读取任务状态
+WsSvc --> Browser : 进度推送 / 流式输出
+
+MQ --> Scheduler
+Scheduler --> LessonAgent
+Scheduler --> NoteAgent
+Scheduler --> QuizAgent
+Scheduler --> FlashAgent
+Scheduler --> KnowledgeAgent
+Scheduler --> SlidesAgent
+Scheduler --> PodcastAgent
+Scheduler --> SpeakingAgent
+Scheduler --> VideoAgent
+
+LessonAgent -up-|> BaseAgent
+NoteAgent -up-|> BaseAgent
+QuizAgent -up-|> BaseAgent
+FlashAgent -up-|> BaseAgent
+KnowledgeAgent -up-|> BaseAgent
+SlidesAgent -up-|> BaseAgent
+PodcastAgent -up-|> BaseAgent
+SpeakingAgent -up-|> BaseAgent
+VideoAgent -up-|> BaseAgent
+
+FileSvc --> Parser : 文件入库后触发解析
+Parser --> Chunker
+Chunker --> EmbedSvc
+EmbedSvc --> VectorDB
+Chunker --> ObjectStore : 原文 / sidecar text / 切片缓存
+Chunker --> RDB : 文档元数据 / 权限元数据
+
+RagApi --> Retriever
+Retriever --> VectorDB
+Retriever --> RDB : user_id / scope / role 权限过滤
+Retriever --> Reranker
+Reranker --> PromptBuilder
+PromptBuilder --> LLMGateway
+BaseAgent --> PromptBuilder : 资料增强上下文
+BaseAgent --> LLMGateway : 模型调用
+LLMGateway --> CloudLLM
+LLMGateway --> LocalLLM
+
+SlidesAgent --> MediaAI
+PodcastAgent --> SpeechAI
+PodcastAgent --> ObjectStore
+SpeakingAgent --> SpeechAI
+VideoAgent --> MediaAI
+VideoAgent --> SpeechAI
+VideoAgent --> ObjectStore
+BiliSvc --> BiliBridge
+
+TeacherSvc --> AuditDB
+StudentSvc --> AuditDB
+RagApi --> AuditDB
+LLMGateway --> AuditDB : 调用日志 / 成本 / 错误
+Safety --> Gateway : 请求侧内容检查
+Safety --> LLMGateway : 生成侧安全策略
+Monitor --> Gateway
+Monitor --> MQ
+Monitor --> Redis
+Logs --> AuditDB
+K8s --> Gateway
+K8s --> AuthSvc
+K8s --> RagApi
+K8s --> Scheduler
+
+note right of Retriever
+RAG 查询流程：
+1. 用户选择资料或输入问题
+2. 按 user_id / scope / role 过滤资料
+3. TopK 检索 + Rerank
+4. 构造带引用片段的 Prompt
+5. LLM 生成并通过 WebSocket 返回
+end note
+
+note bottom of RDB
+现有 PostgreSQL/pgvector 可作为单机原型。
+分布式部署建议迁移为 PostgreSQL / pgvector，
+并保留 Redis、对象存储和向量库作为独立服务。
+end note
+
+@enduml
