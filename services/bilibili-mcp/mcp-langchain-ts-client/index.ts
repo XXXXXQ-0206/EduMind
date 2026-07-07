@@ -83,9 +83,13 @@ export async function MCPTool({
 }): Promise<Tool> {
   return tool(
     async (input): Promise<string> => {
+      const toolArguments =
+        input && typeof input === "object"
+          ? (input as Record<string, unknown>)
+          : {};
       const req: CallToolRequest = {
         method: "tools/call",
-        params: { name: name, arguments: input },
+        params: { name: name, arguments: toolArguments },
       };
       const res = await client.request(req, CallToolResultSchema);
       const content = res.content;

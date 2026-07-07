@@ -1,0 +1,68 @@
+name: Security Audit
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+  push:
+    branches:
+      - main
+      - develop
+  schedule:
+    - cron: "19 19 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  npm-audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            frontend/package-lock.json
+            frontend-legacy/package-lock.json
+            services/bilibili-mcp/package-lock.json
+
+      - name: Audit npm workspaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in . backend frontend frontend-legacy services/bilibili-mcp; do
+            echo "::group::npm audit ${dir}"
+            npm --prefix "${dir}" ci --ignore-scripts
+            npm --prefix "${dir}" audit --audit-level=moderate
+            echo "::endgroup::"
+          done
+
+  python-audit:
+    name: pip-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip pip-audit
+
+      - name: Audit Python requirements
+        run: pip-audit -r requirements.txt

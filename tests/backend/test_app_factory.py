@@ -21,6 +21,18 @@ from core.lifespan import should_initialize_auth_db  # noqa: E402
 from scripts.start_backend_service import is_worker_role  # noqa: E402
 
 
+def iter_app_routes(app):
+    """Yield direct and FastAPI 0.139+ included-router routes."""
+
+    pending = list(app.routes)
+    while pending:
+        route = pending.pop(0)
+        yield route
+        original_router = getattr(route, "original_router", None)
+        if original_router is not None:
+            pending.extend(original_router.routes)
+
+
 def test_service_boundaries_are_registered():
     app = create_app()
 
@@ -36,10 +48,11 @@ def test_service_boundaries_are_registered():
 
 def test_public_route_contract_is_preserved():
     app = create_app()
-    http_paths = {route.path for route in app.routes if hasattr(route, "path")}
+    routes = list(iter_app_routes(app))
+    http_paths = {route.path for route in routes if getattr(route, "path", None)}
     websocket_paths = {
         route.path
-        for route in app.routes
+        for route in routes
         if isinstance(route, APIWebSocketRoute)
     }
 
@@ -67,7 +80,7 @@ def test_public_route_contract_is_preserved():
 
 def test_service_app_mounts_only_boundary_routes():
     app = create_service_app("identity")
-    paths = {route.path for route in app.routes if hasattr(route, "path")}
+    paths = {route.path for route in iter_app_routes(app) if getattr(route, "path", None)}
 
     assert app.state.service_name == "identity"
     assert "/auth/login" in paths
@@ -78,7 +91,7 @@ def test_service_app_mounts_only_boundary_routes():
 
 def test_ai_core_service_mounts_only_internal_ai_routes():
     app = create_service_app("ai-core")
-    paths = {route.path for route in app.routes if hasattr(route, "path")}
+    paths = {route.path for route in iter_app_routes(app) if getattr(route, "path", None)}
 
     assert app.state.service_name == "ai-core"
     assert "/ai/internal/invoke" in paths
