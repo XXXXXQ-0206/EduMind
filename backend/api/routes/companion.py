@@ -3,8 +3,8 @@ Study companion route backed by the configured LLM.
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Dict, List, Optional
+import logging
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
@@ -20,10 +20,10 @@ from utils.feature_support import (
     safe_json_loads,
 )
 from utils.llm import invoke_llm
-from utils.parser import extract_text_from_file
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class CompanionHistoryItem(BaseModel):
@@ -40,33 +40,16 @@ class CompanionAskRequest(BaseModel):
     history: Optional[List[CompanionHistoryItem]] = None
 
 
-def _resolve_direct_path(file_path: str) -> Optional[Path]:
-    raw = (file_path or "").strip()
-    if not raw:
-        return None
-    direct = Path(raw)
-    if direct.exists():
-        return direct
-    return None
-
-
 async def _load_document_text(payload: CompanionAskRequest) -> str:
     provided = (payload.documentText or "").strip()
     if provided:
         return provided
 
     file_path = payload.filePath or ""
-    object_text = await extract_file_text_from_meta({"url": file_path, "filename": Path(file_path).name})
+    object_text = await extract_file_text_from_meta({"url": file_path})
     if object_text:
         return object_text
-
-    resolved = _resolve_direct_path(file_path)
-    if not resolved:
-        return ""
-    try:
-        return await extract_text_from_file(str(resolved))
-    except Exception:
-        return ""
+    return ""
 
 
 def _history_excerpt(history: List[CompanionHistoryItem]) -> str:
@@ -135,8 +118,9 @@ Document context:
             ],
             max_tokens=1800,
         )
-    except Exception as exc:
-        return JSONResponse(content={"ok": False, "error": str(exc)}, status_code=500)
+    except Exception:
+        logger.exception("Companion LLM invocation failed")
+        return JSONResponse(content={"ok": False, "error": "companion generation failed"}, status_code=500)
 
     parsed = safe_json_loads(raw)
     if isinstance(parsed, dict):

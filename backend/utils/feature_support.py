@@ -10,7 +10,8 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import aiofiles
 
-from utils.upload_objects import upload_path_from_meta
+from infrastructure.object_store import create_object_store
+from utils.upload_objects import upload_object_key_from_meta, upload_path_from_meta
 
 
 def strip_code_fences(text: str) -> str:
@@ -109,9 +110,17 @@ async def extract_file_text_from_meta(meta: Dict[str, Any]) -> str:
         return text
 
     try:
-        from utils.parser import extract_text_from_file
+        from utils.parser import extract_text_from_file_bytes
 
-        return await extract_text_from_file(str(file_path), meta.get("mimeType"))
+        object_key = upload_object_key_from_meta(meta)
+        if not object_key:
+            return ""
+        content = await create_object_store().get_bytes(object_key)
+        return await extract_text_from_file_bytes(
+            content,
+            filename=str(meta.get("originalName") or meta.get("filename") or object_key),
+            mime_type=meta.get("mimeType"),
+        )
     except Exception:
         return ""
 

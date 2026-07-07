@@ -3,6 +3,7 @@
 与原 Node.js 版本完全兼容
 """
 import asyncio
+import logging
 import uuid
 import re
 from datetime import datetime
@@ -17,6 +18,7 @@ from agents.podcast_agent import PodcastAgent, PodcastInput
 from core.task_dispatcher import dispatch_generation_task, register_task_handler
 from infrastructure.object_store import create_object_store
 from infrastructure.task_lease import acquire_task_lease, release_task_lease
+from utils.api_errors import safe_error_response
 from utils.auth import require_auth, require_websocket_auth, get_request_user, resolve_user_from_token
 from utils.auth_contracts import AuthUser
 from utils.feature_support import build_selected_files_context
@@ -26,6 +28,7 @@ from config import config
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 PODCAST_TASKS: Dict[str, asyncio.Task[Any]] = {}
 
 
@@ -273,8 +276,8 @@ async def _run_podcast_generation(pid: str) -> None:
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        err_msg = str(exc).strip() or "podcast generation failed"
-        print(f"[podcast] generate failed pid={pid}: {err_msg}")
+        logger.exception("Podcast generation failed")
+        err_msg = "podcast generation failed"
         await _update_podcast_meta(pid, "error", error=err_msg)
         await _send_podcast_event(pid, {"type": "error", "error": err_msg})
         return
@@ -349,12 +352,10 @@ async def _ensure_podcast_generation(pid: str) -> None:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            err_msg = str(exc).strip() or "podcast generation failed"
+            logger.exception("Podcast runner failed")
+            err_msg = "podcast generation failed"
             await _update_podcast_meta(pid, "error", error=err_msg)
             await _send_podcast_event(pid, {"type": "error", "error": err_msg})
-            import traceback
-            print(f"[podcast] runner failed pid={pid}: {type(exc).__name__}: {exc!r}")
-            traceback.print_exc()
         finally:
             await release_task_lease(lease)
             PODCAST_TASKS.pop(pid, None)
@@ -433,8 +434,8 @@ async def create_podcast(request: PodcastRequest, user: AuthUser = Depends(requi
             status_code=202,
         )
 
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "podcast generation request failed")
 
 
 @router.websocket("/ws/podcast")
@@ -472,11 +473,11 @@ async def podcast_websocket(websocket: WebSocket):
     except WebSocketDisconnect:
         print(f"[podcast] ws disconnect pid={pid}")
         return
-    except Exception as e:
-        print(f"[podcast] ws error pid={pid}: {e}")
-        await _update_podcast_meta(pid, "error", error=str(e))
+    except Exception:
+        logger.exception("Podcast websocket failed")
+        await _update_podcast_meta(pid, "error", error="podcast stream failed")
         try:
-            await _safe_send_podcast(websocket, {"type": "error", "error": str(e)}, pid)
+            await _safe_send_podcast(websocket, {"type": "error", "error": "podcast stream failed"}, pid)
         except Exception:
             return
     finally:
@@ -542,8 +543,8 @@ async def download_podcast(
         content = await object_store.get_bytes(object_key)
         return _audio_download_response(content, matching_file.name)
 
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "podcast download failed")
 
 
 @router.get("/podcasts")
@@ -552,8 +553,8 @@ async def list_podcasts_handler(user: AuthUser = Depends(require_auth)):
     try:
         podcasts = await list_podcasts(user.id, user.username)
         return {"ok": True, "podcasts": podcasts}
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "podcast list failed")
 
 
 @router.get("/podcasts/{pid}")
@@ -592,8 +593,8 @@ async def get_podcast_handler(pid: str, user: AuthUser = Depends(require_auth)):
             await dispatch_generation_task("podcast", pid, _ensure_podcast_generation)
 
         return {"ok": True, "podcast": meta, "script": script}
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "podcast detail failed")
 
 
 @router.delete("/podcasts/{pid}")
@@ -612,8 +613,8 @@ async def delete_podcast_handler(pid: str, user: AuthUser = Depends(require_auth
             task.cancel()
         await delete_podcast(pid)
         return {"ok": True}
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "podcast deletion failed")
 
 
 register_task_handler("podcast", _run_podcast_generation_worker)

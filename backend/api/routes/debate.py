@@ -4,6 +4,7 @@ Debate routes with websocket-based AI rebuttal and analysis.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 import uuid
 from typing import Any, Dict, List, Optional
@@ -21,6 +22,7 @@ from utils.storage import json_storage
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class DebateStartRequest(BaseModel):
@@ -223,7 +225,8 @@ Latest user argument:
         await _mutate_session(debate_id, append_reply)
         await _publish_event(debate_id, {"type": "ai_complete", "content": reply})
     except Exception as exc:
-        await _publish_event(debate_id, {"type": "error", "error": str(exc)})
+        logger.exception("Debate AI reply failed")
+        await _publish_event(debate_id, {"type": "error", "error": "debate reply failed"})
     finally:
         await release_task_lease(lease)
 
@@ -341,7 +344,8 @@ Transcript:
         await _publish_event(channel, {"type": "phase", "value": "生成最终结论"})
         await _publish_event(channel, {"type": "complete", "analysis": analysis, "session": session})
     except Exception as exc:
-        await _publish_event(channel, {"type": "error", "error": str(exc)})
+        logger.exception("Debate analysis failed")
+        await _publish_event(channel, {"type": "error", "error": "debate analysis failed"})
     finally:
         await release_task_lease(lease)
 

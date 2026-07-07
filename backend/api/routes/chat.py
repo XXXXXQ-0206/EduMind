@@ -2,6 +2,7 @@
 聊天 API 路由
 """
 import asyncio
+import logging
 import time
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
@@ -10,6 +11,7 @@ from pydantic import BaseModel
 
 from core.task_dispatcher import dispatch_generation_task, register_task_handler
 from infrastructure.task_lease import TaskLease, acquire_task_lease, release_task_lease
+from utils.api_errors import safe_error_response
 from utils.auth import require_auth, require_websocket_auth
 from utils.auth_contracts import AuthUser
 from utils.feature_support import build_selected_files_context
@@ -29,6 +31,7 @@ from utils.llm import stream_llm
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 CHAT_TASKS: Dict[str, asyncio.Task[Any]] = {}
 CHAT_GENERATION_TIMEOUT_SECONDS = 300
 CHAT_HEARTBEAT_SECONDS = 8.0
@@ -244,7 +247,8 @@ async def _run_chat_generation(chat_id: str) -> None:
         await _send_chat_event(chat_id, {"type": "answer", "answer": answer})
         await _send_chat_event(chat_id, {"type": "done"})
     except Exception as exc:
-        await _send_chat_event(chat_id, {"type": "error", "error": str(exc)})
+        logger.exception("Chat generation failed")
+        await _send_chat_event(chat_id, {"type": "error", "error": "chat generation failed"})
         await _send_chat_event(chat_id, {"type": "done"})
 
 
@@ -309,12 +313,8 @@ async def create_chat_handler(request: ChatRequest, user: AuthUser = Depends(req
             }
         )
 
-    except Exception as e:
-        print(f"[ERROR] Failed to create chat: {e}")
-        return JSONResponse(
-            content={"ok": False, "error": str(e)},
-            status_code=500
-        )
+    except Exception as exc:
+        return safe_error_response(logger, exc, "chat creation failed")
 
 
 @router.websocket("/ws/chat")
@@ -367,9 +367,9 @@ async def chat_websocket(websocket: WebSocket):
 
     except WebSocketDisconnect:
         pass
-    except Exception as e:
-        print(f"[ERROR] chat websocket failed chatId={chat_id}: {e}")
-        await _send_chat_event(chat_id, {"type": "error", "error": str(e)})
+    except Exception:
+        logger.exception("Chat websocket failed")
+        await _send_chat_event(chat_id, {"type": "error", "error": "chat stream failed"})
         await _send_chat_event(chat_id, {"type": "done"})
     finally:
         forwarder.cancel()
@@ -388,8 +388,8 @@ async def list_chats_handler(role: Optional[str] = None, user: AuthUser = Depend
             scope = None
         chats = await list_chats(scope=scope, user_id=user.id, username=user.username)
         return {"ok": True, "chats": chats}
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "chat list failed")
 
 
 @router.get("/chats/{chat_id}")
@@ -410,8 +410,8 @@ async def get_chat_handler(chat_id: str, user: AuthUser = Depends(require_auth))
         messages = await get_messages(chat_id)
 
         return {"ok": True, "chat": chat, "messages": messages}
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "chat detail failed")
 
 
 @router.delete("/chats/{chat_id}")
@@ -425,8 +425,8 @@ async def delete_chat_handler(chat_id: str, user: AuthUser = Depends(require_aut
             return JSONResponse(content={"ok": False, "error": "not found"}, status_code=404)
         await delete_chat(chat_id)
         return {"ok": True}
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "chat deletion failed")
 
 
 register_task_handler("chat", _run_chat_generation_worker)

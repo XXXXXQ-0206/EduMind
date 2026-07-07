@@ -7,7 +7,7 @@ URLs, and resolve local paths while legacy parsers still need filesystem access.
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Optional, Protocol
 
 import aiofiles
@@ -101,7 +101,11 @@ class LocalObjectStore:
         return f"{self.public_base_url}/{normalize_object_key(key)}"
 
     def path_for(self, key: str) -> Path:
-        return self.base_dir / normalize_object_key(key)
+        base = self.base_dir.resolve()
+        path = (base / normalize_object_key(key)).resolve()
+        if path != base and base not in path.parents:
+            raise ValueError(f"Object key escapes storage root: {key}")
+        return path
 
 
 class S3ObjectStore:
@@ -197,7 +201,15 @@ class S3ObjectStore:
 
 
 def normalize_object_key(key: str) -> str:
-    return str(key or "").strip().replace("\\", "/").lstrip("/")
+    raw = str(key or "").strip().replace("\\", "/").lstrip("/")
+    parts = []
+    for part in PurePosixPath(raw).parts:
+        if part in {"", "."}:
+            continue
+        if part == "..":
+            raise ValueError("Object key cannot contain parent directory segments")
+        parts.append(part)
+    return "/".join(parts)
 
 
 def create_object_store(base_dir: Optional[Path] = None) -> ObjectStore:

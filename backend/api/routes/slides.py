@@ -2,6 +2,7 @@
 幻灯片 API 路由
 生成大纲 + 配图（即梦纯图无文字），仅展示不生成 pptx
 """
+import logging
 import uuid
 from pathlib import Path
 from typing import List, Optional
@@ -14,6 +15,7 @@ from pydantic import BaseModel
 from agents.slides_agent import SlidesAgent, SlidesInput
 from config import config
 from infrastructure.object_store import create_object_store
+from utils.api_errors import safe_error_response
 from utils.auth import require_auth
 from utils.auth_contracts import AuthUser
 from utils.feature_support import build_selected_files_context
@@ -21,6 +23,7 @@ from utils.storage import json_storage, list_files_for_user, owner_payload, reco
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class SlidesGenerateRequest(BaseModel):
@@ -100,11 +103,8 @@ async def generate_slides(request: SlidesGenerateRequest, user: AuthUser = Depen
 
     try:
         result = await agent.execute(input_data)
-    except Exception as e:
-        return JSONResponse(
-            content={"ok": False, "error": str(e)},
-            status_code=500,
-        )
+    except Exception as exc:
+        return safe_error_response(logger, exc, "slide generation failed")
 
     if not result.success:
         return JSONResponse(

@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 
 BACKEND_DIR = Path(__file__).resolve().parents[2] / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
@@ -373,6 +375,15 @@ def test_local_object_store_writes_urls_and_deletes(tmp_path):
         assert store.path_for("uploads/keep.txt").exists()
 
     asyncio.run(run())
+
+
+def test_local_object_store_rejects_parent_segments(tmp_path):
+    store = LocalObjectStore(base_dir=tmp_path, public_base_url="/storage")
+
+    with pytest.raises(ValueError):
+        normalize_object_key("../secret.txt")
+    with pytest.raises(ValueError):
+        store.path_for("uploads/../../secret.txt")
 
 
 def test_upload_metadata_prefers_object_key_for_text_extraction(tmp_path, monkeypatch):

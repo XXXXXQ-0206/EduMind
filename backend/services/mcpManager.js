@@ -85,8 +85,12 @@ class McpManager {
     }
   }
 
+  stripMarkupText(value) {
+    return String(value || "").replace(/[<>&"'`]/g, "").trim();
+  }
+
   normalizeVideo(raw) {
-    const title = (raw?.title || "").replace(/<[^>]+>/g, "").trim();
+    const title = this.stripMarkupText(raw?.title);
     const cover = raw?.pic || "";
     const bvid = raw?.bvid || "";
     const author = raw?.author || raw?.owner?.name || "";

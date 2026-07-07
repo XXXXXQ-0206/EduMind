@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import math
 import re
 import time
@@ -12,7 +13,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import aiofiles
 
-from utils.parser import extract_text_from_file
+from infrastructure.object_store import create_object_store
+from utils.parser import extract_text_from_file_bytes
 from utils.storage import VectorStore, json_storage
 from utils.upload_objects import upload_object_key_from_meta, upload_path_from_meta
 
@@ -23,6 +25,7 @@ DEFAULT_MAX_CONTEXT_CHARS = 12000
 DEFAULT_MAX_CONTEXT_CHUNKS = 10
 DEFAULT_PER_FILE_K = 3
 _INDEX_LOCKS: Dict[str, asyncio.Lock] = {}
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -113,7 +116,7 @@ def _file_owner_id(meta: Dict[str, Any], fallback: int = 0) -> int:
 
 
 def _namespace(owner_id: int, role: str, file_id: str) -> str:
-    digest = hashlib.sha1(f"{owner_id}:{_normalize_role(role)}:{file_id}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(f"{owner_id}:{_normalize_role(role)}:{file_id}".encode("utf-8")).hexdigest()
     return f"rag_{digest}"
 
 
@@ -166,7 +169,17 @@ async def extract_text_for_file(meta: Dict[str, Any], *, use_cache: bool = True)
         if cached:
             return cached
 
-    text = _normalize_text(await extract_text_from_file(str(file_path), meta.get("mimeType")))
+    object_key = upload_object_key_from_meta(meta)
+    if not object_key:
+        return ""
+    content = await create_object_store().get_bytes(object_key)
+    text = _normalize_text(
+        await extract_text_from_file_bytes(
+            content,
+            filename=_file_name(meta),
+            mime_type=meta.get("mimeType"),
+        )
+    )
     if use_cache and text:
         await _write_sidecar_text(file_path, text)
     return text
@@ -230,7 +243,7 @@ def build_document_chunks(
     total = len(raw_chunks)
     chunks: List[DocumentChunk] = []
     for index, item in enumerate(raw_chunks):
-        chunk_id = hashlib.sha1(f"{file_id}:{index}:{item['char_start']}:{item['char_end']}".encode("utf-8")).hexdigest()
+        chunk_id = hashlib.sha256(f"{file_id}:{index}:{item['char_start']}:{item['char_end']}".encode("utf-8")).hexdigest()
         chunks.append(
             DocumentChunk(
                 id=chunk_id,
@@ -312,7 +325,7 @@ async def _index_file_meta_unlocked(
                 vector_status = "indexed"
             except Exception as exc:
                 vector_status = "keyword-fallback"
-                print(f"[rag] vector index fallback file_id={file_id}: {exc}")
+                logger.warning("RAG vector index fallback file_id=%s", file_id, exc_info=True)
         status = "ready" if chunks else "empty"
         result = DocumentIndexResult(
             file_id=file_id,
@@ -326,6 +339,7 @@ async def _index_file_meta_unlocked(
         await json_storage.set(_status_key(file_id), asdict(result))
         return result
     except Exception as exc:
+        logger.exception("RAG document indexing failed")
         result = DocumentIndexResult(
             file_id=file_id,
             status="error",
@@ -333,7 +347,7 @@ async def _index_file_meta_unlocked(
             text_chars=0,
             indexed_at=_now_ms(),
             vector_status="failed",
-            error=str(exc),
+            error="document indexing failed",
         )
         await json_storage.set(_status_key(file_id), asdict(result))
         return result

@@ -2,6 +2,7 @@
 闪卡 API 路由
 与原 Node.js 版本完全兼容
 """
+import logging
 import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -10,6 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from agents.flashcards_agent import KnowledgeCardsAgent, KnowledgeCardsInput
+from utils.api_errors import safe_error_response
 from utils.auth import require_auth
 from utils.auth_contracts import AuthUser
 from utils.feature_support import build_selected_files_context
@@ -17,6 +19,7 @@ from utils.storage import filter_records_for_user, json_storage, list_files_for_
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class Flashcard(BaseModel):
@@ -91,8 +94,8 @@ async def create_flashcard(request: CreateFlashcardRequest, user: AuthUser = Dep
 
     except HTTPException:
         raise
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "flashcard creation failed")
 
 
 @router.get("/flashcards")
@@ -102,8 +105,8 @@ async def list_flashcards(user: AuthUser = Depends(require_auth)):
         cards = await json_storage.get("flashcards") or []
         cards = filter_records_for_user(cards, user.id, user.username)
         return {"ok": True, "flashcards": cards}
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "flashcard list failed")
 
 
 @router.delete("/flashcards/{card_id}")
@@ -129,8 +132,8 @@ async def delete_flashcard(card_id: str, user: AuthUser = Depends(require_auth))
 
     except HTTPException:
         raise
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "flashcard deletion failed")
 
 
 async def _build_material_context(ids: List[str], user: AuthUser, query: str) -> str:
@@ -208,8 +211,8 @@ async def generate_knowledge_cards(request: KnowledgeCardsRequest, user: AuthUse
         )
 
         return {"ok": True, "deck": deck_dict}
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "knowledge deck generation failed")
 
 
 @router.get("/flashcards/decks")
@@ -221,8 +224,8 @@ async def list_knowledge_decks(user: AuthUser = Depends(require_auth)):
         if isinstance(decks, list):
             decks.sort(key=lambda d: d.get("updated_at", ""), reverse=True)
         return {"ok": True, "decks": decks}
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "knowledge deck list failed")
 
 
 @router.get("/flashcards/decks/{deck_id}")
@@ -235,8 +238,8 @@ async def get_knowledge_deck(deck_id: str, user: AuthUser = Depends(require_auth
         if not deck or not record_belongs_to_user(deck, user.id, user.username):
             return JSONResponse(content={"ok": False, "error": "not found"}, status_code=404)
         return {"ok": True, "deck": deck}
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "knowledge deck detail failed")
 
 
 @router.delete("/flashcards/decks/{deck_id}")
@@ -256,5 +259,5 @@ async def delete_knowledge_deck(deck_id: str, user: AuthUser = Depends(require_a
             default=[],
         )
         return {"ok": True}
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "knowledge deck deletion failed")

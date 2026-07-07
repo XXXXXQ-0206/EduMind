@@ -17,6 +17,7 @@ from agents.teaching_video_agent import TeachingVideoAgent, TeachingVideoInput
 from core.task_dispatcher import dispatch_generation_task, register_task_handler
 from infrastructure.object_store import create_object_store
 from infrastructure.task_lease import acquire_task_lease, release_task_lease
+from utils.api_errors import safe_error_response
 from utils.auth import get_bearer_token, require_auth, require_websocket_auth, resolve_user_from_token
 from utils.auth_contracts import AuthUser
 from utils.feature_support import build_selected_files_context
@@ -117,7 +118,7 @@ def _format_video_error(exc: Exception) -> str:
                 + (f" request_id={exc.request_id}" if exc.request_id else "")
             )
         return exc.to_user_message()
-    return str(exc)
+    return "teaching video generation failed"
 
 
 def _is_visual_text_risk_error(exc: Exception) -> bool:
@@ -203,11 +204,8 @@ async def create_teaching_video(request: TeachingVideoRequest, user: AuthUser = 
                 "events": f"/tasks/teaching-video/{video_id}/events",
             },
         )
-    except Exception as e:
-        return JSONResponse(
-            content={"ok": False, "error": str(e)},
-            status_code=500,
-        )
+    except Exception as exc:
+        return safe_error_response(logger, exc, "teaching video generation request failed")
 
 
 async def _stream_file(path: Path):
@@ -560,8 +558,8 @@ async def list_teaching_videos_handler(role: Optional[str] = None, user: AuthUse
             scope = None
         videos = await list_teaching_videos(scope=scope, user_id=user.id, username=user.username)
         return {"ok": True, "videos": videos}
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "teaching video list failed")
 
 
 register_task_handler("teaching_video", _run_teaching_video_generation_worker)
@@ -610,8 +608,8 @@ async def get_teaching_video_handler(video_id: str, user: AuthUser = Depends(req
             "videoTaskId": video_task_id or "",
             "videoRequestId": video_request_id or "",
         }
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "teaching video detail failed")
 
 
 @router.get("/teaching-videos/{video_id}/video")
@@ -672,5 +670,5 @@ async def delete_teaching_video_handler(video_id: str, user: AuthUser = Depends(
             return JSONResponse(content={"ok": False, "error": "not found"}, status_code=404)
         await delete_teaching_video(video_id)
         return {"ok": True}
-    except Exception as e:
-        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
+    except Exception as exc:
+        return safe_error_response(logger, exc, "teaching video deletion failed")

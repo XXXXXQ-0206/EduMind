@@ -22,5 +22,6 @@
     },
     "types": ["vite/client", "vitest/globals"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/tests/e2e"]
 }
