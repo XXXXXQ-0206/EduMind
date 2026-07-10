@@ -1,6 +1,6 @@
 """
 幻灯片生成 Agent
-流水线：逻辑大纲(DeepSeek) -> 配图(即梦，纯图无文字) -> 仅展示大纲+插图，不生成 pptx 避免文字乱码
+流水线：逻辑大纲(DeepSeek) -> 配图(即梦，纯图无文字) -> 展示大纲+插图，并可导出 pptx
 """
 import asyncio
 import json
@@ -38,11 +38,13 @@ class SlideItem:
     """单页幻灯片数据"""
     def __init__(
         self,
+        page_index: int,
         title: str,
         bullets: List[str],
         image_path: Optional[str] = None,
         image_object_key: Optional[str] = None,
     ):
+        self.page_index = page_index
         self.title = title
         self.bullets = bullets or []
         self.image_path = image_path
@@ -50,6 +52,7 @@ class SlideItem:
 
     def to_dict(self) -> dict:
         return {
+            "pageIndex": self.page_index,
             "title": self.title,
             "bullets": self.bullets,
             "imageUrl": self.image_path,  # 前端用 URL，后端存相对路径
@@ -58,7 +61,7 @@ class SlideItem:
 
 
 class SlidesOutput(AgentOutput):
-    """幻灯片生成输出（大纲 + 配图，无 pptx）"""
+    """幻灯片生成输出（大纲 + 配图）"""
     slide_id: Optional[str] = None
     title: Optional[str] = None
     page_count: int = 0
@@ -66,7 +69,7 @@ class SlidesOutput(AgentOutput):
 
 
 class SlidesAgent(LLMAgent):
-    """幻灯片生成 Agent：大纲 -> 配图（纯图无文字），仅展示大纲+插图"""
+    """幻灯片生成 Agent：大纲 -> 配图（纯图无文字），每页绑定标题、要点与插图。"""
 
     def __init__(self):
         system_prompt = """你是一位专业的教学课件设计专家。根据用户给出的主题和页数，生成适合课堂使用的 PPT 大纲。
@@ -100,13 +103,15 @@ class SlidesAgent(LLMAgent):
             # 2. 组装每页数据（标题 + 要点）
             slides_data: List[SlideItem] = []
             for i, item in enumerate(outline):
+                if not isinstance(item, dict):
+                    item = {}
                 title = item.get("title") or (f"第{i+1}页" if i > 0 else topic)
                 bullets = item.get("bullets")
                 if isinstance(bullets, list):
                     bullets = [str(b).strip() for b in bullets if str(b).strip()]
                 else:
                     bullets = []
-                slides_data.append(SlideItem(title=title, bullets=bullets))
+                slides_data.append(SlideItem(page_index=i + 1, title=title, bullets=bullets))
 
             # 3. 即梦生成配图（纯图、无文字，使用生动高质量提示词）
             save_dir = config.storage_dir / "slides" / slide_id
@@ -155,7 +160,10 @@ class SlidesAgent(LLMAgent):
                             await asyncio.sleep(1.2 * (attempt + 1))
 
                     if img_path:
-                        object_key = f"slides/{slide_id}/{img_path.name}"
+                        suffix = img_path.suffix.lower() if img_path.suffix else ".png"
+                        if suffix not in {".png", ".jpg", ".jpeg"}:
+                            suffix = ".png"
+                        object_key = f"slides/{slide_id}/page-{i + 1:02d}{suffix}"
                         slide.image_path = await object_store.put_file(object_key, img_path)
                         slide.image_object_key = object_key
                         async with lock:
@@ -181,7 +189,7 @@ class SlidesAgent(LLMAgent):
             except Exception as e:
                 logger.warning("即梦配图失败（大纲仍会展示）: %s", e)
 
-            # 仅返回大纲 + 配图，不生成 pptx，避免文字乱码
+            # 返回页级绑定数据：每页都有标题、正文要点，并尽量绑定一张配图。
             slides_for_api: List[dict] = [s.to_dict() for s in slides_data]
 
             return SlidesOutput(
@@ -215,7 +223,7 @@ class SlidesAgent(LLMAgent):
             try:
                 arr = json.loads(text)
                 if isinstance(arr, list) and len(arr) >= 2:
-                    return arr[:page_count]
+                    return self._fit_outline_length(arr, topic, page_count)
             except (json.JSONDecodeError, TypeError):
                 continue
         # 提取 [...] 后再试一次修复并解析
@@ -223,7 +231,7 @@ class SlidesAgent(LLMAgent):
         try:
             arr = json.loads(extracted)
             if isinstance(arr, list) and len(arr) >= 2:
-                return arr[:page_count]
+                return self._fit_outline_length(arr, topic, page_count)
         except (json.JSONDecodeError, TypeError):
             pass
         # 回退：生成默认大纲，保证能出结果
@@ -233,7 +241,18 @@ class SlidesAgent(LLMAgent):
                 "title": f"{topic} - 第{i}部分",
                 "bullets": [f"要点 {j+1}" for j in range(3)],
             })
-        return arr[:page_count]
+        return self._fit_outline_length(arr, topic, page_count)
+
+    def _fit_outline_length(self, arr: List[Dict[str, Any]], topic: str, page_count: int) -> List[Dict[str, Any]]:
+        """保证大纲页数与用户要求一致，避免文字与配图数量错位。"""
+        normalized = [item if isinstance(item, dict) else {} for item in arr[:page_count]]
+        while len(normalized) < page_count:
+            page_no = len(normalized) + 1
+            normalized.append({
+                "title": f"{topic} - 第{page_no}部分" if topic else f"第{page_no}页",
+                "bullets": [f"要点 {j + 1}" for j in range(3)],
+            })
+        return normalized
 
     async def _generate_outline(
         self, topic: str, page_count: int, materials_text: str

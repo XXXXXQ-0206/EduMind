@@ -41,7 +41,9 @@ HTTP 创建任务
 
 ## 改造后
 
-改造后，任务执行层切换为 Celery，Redis 同时承担 broker、result backend、事件总线和任务租约的基础设施角色。
+改造后，在 Docker Compose 的默认长任务拓扑中，任务执行层切换为 Celery，Redis 同时承担 broker、result backend、事件总线和任务租约的基础设施角色。
+
+需要区分两层默认值：`backend/config.py` 的代码默认值仍是 `TASK_QUEUE_PROVIDER=inline`，方便单进程本地运行；`.env.example` 和 Docker Compose 中的生成类服务默认使用 `TASK_QUEUE_PROVIDER=celery`。
 
 | 层级 | 实现 |
 | --- | --- |
@@ -93,9 +95,9 @@ await dispatch_generation_task("quiz", quiz_id, ensure_quiz_generation_task)
 
 区别在于：
 
-- `TASK_QUEUE_PROVIDER=inline`：本地直接启动，用于开发或简单运行。
-- `TASK_QUEUE_PROVIDER=redis`：保留旧 Redis list 队列能力，方便回滚。
-- `TASK_QUEUE_PROVIDER=celery`：发布 Celery 任务，推荐部署模式。
+- `TASK_QUEUE_PROVIDER=inline`：代码默认值，本地单进程直接执行，用于开发或简单运行。
+- `TASK_QUEUE_PROVIDER=redis`：保留旧 Redis list 队列能力，方便排障和回滚。
+- `TASK_QUEUE_PROVIDER=celery`：发布 Celery 任务；Docker Compose 里的生成类服务默认走这个模式。
 
 ### 3. 进度事件继续走 Redis Pub/Sub
 
@@ -127,26 +129,33 @@ GET /tasks/{kind}/{task_id}/events
 chat
 quiz
 smartnotes
+note
 podcast
 paper
 exam
 teaching-video
+teaching_video
+video
 ```
+
+其中 `note` 是 `smartnotes` 的别名；`teaching-video`、`teaching_video`、`video` 都映射到教学视频任务，SSE 事件中的 canonical kind 是 `teaching_video`。
 
 SSE 接口会：
 
 - 通过 `Authorization: Bearer <token>` 或 `?token=<token>` 鉴权。
 - 校验任务元数据是否属于当前用户。
-- 订阅对应 Redis Pub/Sub channel。
+- 先输出一个 `ready` 事件。
+- 对 `chat`，如果最后一条消息已经是 assistant 回复，会直接回放 `answer` 和 `done`，并带 `replayed: true`，不会继续等待 Redis Pub/Sub。
+- 其他任务会订阅对应 Redis Pub/Sub channel。
 - 输出 `text/event-stream` 格式事件。
 
 前端也新增了通用 helper：
 
 ```ts
-connectTaskEvents(kind, taskId, onEvent)
+subscribeTaskEvents(eventsUrl, onEvent, onError?)
 ```
 
-这意味着前端可以继续用 WebSocket，也可以在只需要服务端单向推送时使用 SSE。
+这里传入的是后端返回体里的 `events` URL。helper 会用浏览器原生 `EventSource` 连接 SSE，并在存在登录 token 时追加 `?token=` 参数；返回值是关闭连接的函数。这意味着前端可以继续用 WebSocket，也可以在只需要服务端单向推送时使用 SSE。
 
 ## 优势
 
@@ -196,8 +205,11 @@ WebSocket 保留，旧前端不需要立刻迁移。SSE 新增后，有些只需
 ```env
 REDIS_URL=redis://redis:6379/0
 EVENT_BUS_PROVIDER=redis
-TASK_LEASE_PROVIDER=redis
 TASK_QUEUE_PROVIDER=celery
+TASK_QUEUE_NAME=edumind:tasks
+TASK_LEASE_PROVIDER=redis
+TASK_LEASE_TTL_SECONDS=1800
+TASK_WORKER_POLL_SECONDS=2
 
 CELERY_BROKER_URL=redis://redis:6379/0
 CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -214,14 +226,19 @@ CELERY_WORKER_POOL=prefork
 | 配置 | 作用 |
 | --- | --- |
 | `TASK_QUEUE_PROVIDER` | 控制任务派发模式，生产推荐 `celery` |
+| `TASK_QUEUE_NAME` | 旧 Redis list 队列名，仅在 `TASK_QUEUE_PROVIDER=redis` 路径使用 |
+| `TASK_WORKER_POLL_SECONDS` | 旧 Redis list worker 的轮询间隔 |
 | `CELERY_BROKER_URL` | Celery broker，当前使用 Redis |
 | `CELERY_RESULT_BACKEND` | Celery 结果后端，当前使用 Redis |
 | `CELERY_TASK_QUEUE_NAME` | Celery 队列名 |
 | `CELERY_VISIBILITY_TIMEOUT_SECONDS` | Redis broker 中任务可见性超时时间 |
 | `CELERY_TASK_MAX_RETRIES` | Celery 任务失败最大重试次数 |
+| `CELERY_TASK_RETRY_DELAY_SECONDS` | Celery 任务失败后的重试延迟 |
 | `CELERY_WORKER_CONCURRENCY` | worker 并发数 |
+| `CELERY_WORKER_POOL` | Celery worker pool 类型 |
 | `EVENT_BUS_PROVIDER` | 进度事件总线，跨进程部署应使用 `redis` |
 | `TASK_LEASE_PROVIDER` | 防重复执行租约，跨进程部署应使用 `redis` |
+| `TASK_LEASE_TTL_SECONDS` | 任务租约 TTL，避免异常退出后永久占用租约 |
 
 ## Docker Compose 变化
 
@@ -233,6 +250,8 @@ media-generation
 teaching-content
 generation-worker
 ```
+
+`api-gateway`、`identity`、`asset-library`、`ai-core` 在当前 compose 中仍设置为 `TASK_QUEUE_PROVIDER=inline`；这些服务不作为生成类任务派发服务，或不需要把任务发布到 Celery 队列。
 
 其中业务服务负责发任务：
 
@@ -276,6 +295,8 @@ TASK_QUEUE_PROVIDER=celery
 
 这个字段是向后兼容新增字段，旧前端可以忽略，新前端可以按需选择 SSE。
 
+当前创建接口的 HTTP 状态码以各业务路由实现为准：`chat`、`quiz`、`smartnotes`、`podcast`、`paper`、`teaching-video` 创建成功时返回 `202`；`exam` 当前创建成功时返回 `200`，但同样会返回 `stream` 和 `events`，并通过 `dispatch_generation_task("exam", runId, ...)` 异步派发生成任务。因此测试时不要只用状态码判断是否进入异步路径，应同时看返回体里的 `events` 字段和 worker 日志。
+
 ## 运行与检查
 
 常规 Docker Compose 启动：
@@ -283,6 +304,14 @@ TASK_QUEUE_PROVIDER=celery
 ```powershell
 docker compose up --build
 ```
+
+也可以使用快速启动脚本：
+
+```powershell
+.\start-edumind.ps1
+```
+
+快速启动脚本会校验 compose 配置并启动完整 Docker Compose 微服务拓扑；如果 `.env` 中显式把 `TASK_QUEUE_PROVIDER` 配成非 `celery`，脚本会打印兼容性警告。`-CheckOnly` 只检查 Docker/Compose 配置和服务列表，不会真正创建任务，也测不出 Celery worker 是否消费任务。
 
 检查 worker 是否启动为 Celery：
 
@@ -298,7 +327,7 @@ docker compose logs generation-worker
 docker compose exec redis redis-cli ping
 ```
 
-检查 API 创建任务后，业务服务应快速返回 `202`，实际生成由 `generation-worker` 异步完成。
+检查 API 创建任务后，业务服务应快速返回任务 ID、原有 `stream` 字段和新增 `events` 字段。除 `exam` 当前为 `200` 外，其他已改造的创建接口成功时返回 `202`；实际生成由 `generation-worker` 异步完成。
 
 ## 排障建议
 

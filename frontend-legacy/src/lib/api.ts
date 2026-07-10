@@ -1454,9 +1454,11 @@ export async function analyzeDebate(debateId: string) {
 }
 
 export type SlideItem = {
+  pageIndex?: number;
   title: string;
   bullets: string[];
   imageUrl?: string | null;
+  imageObjectKey?: string | null;
 };
 export type SlidesGenerateResponse = {
   ok: boolean;
@@ -1464,12 +1466,14 @@ export type SlidesGenerateResponse = {
   title?: string;
   pageCount?: number;
   downloadUrl?: string;
+  pptxReady?: boolean;
+  pptxAssetUrl?: string;
   slides?: SlideItem[];
   error?: string;
 };
 export type SlideDetailResponse = {
   ok: boolean;
-  slide?: { id: string; title?: string; pageCount?: number; at?: number };
+  slide?: { id: string; title?: string; pageCount?: number; at?: number; downloadUrl?: string; pptxReady?: boolean };
   slides?: SlideItem[];
   error?: string;
 };
@@ -1517,6 +1521,44 @@ export function getSlideDetail(slideId: string) {
 
 export function getSlideDownloadUrl(slideId: string): string {
   return `${env.backend}/slides/${encodeURIComponent(slideId)}/download`;
+}
+
+function filenameFromDisposition(header: string | null, fallback: string) {
+  if (!header) return fallback;
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8?.[1]) return decodeURIComponent(utf8[1].replace(/"/g, ""));
+  const plain = /filename="?([^";]+)"?/i.exec(header);
+  return plain?.[1] || fallback;
+}
+
+export async function downloadSlidePptx(slideId: string) {
+  const { signal, done } = timeoutCtl(env.timeout);
+  const headers = new Headers();
+  const token = getAuthToken();
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  try {
+    const response = await fetch(getSlideDownloadUrl(slideId), { method: "GET", headers, signal });
+    if (!response.ok) {
+      if (response.status === 401) writeAuthSession(null);
+      const raw = await response.text().catch(() => "");
+      let detail = raw || response.statusText;
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as { detail?: unknown; message?: unknown; error?: unknown };
+          const candidate = parsed.detail ?? parsed.message ?? parsed.error;
+          if (typeof candidate === "string" && candidate.trim()) detail = candidate;
+        } catch {
+          // Keep original response text when body is not JSON.
+        }
+      }
+      throw new Error(`http ${response.status}: ${detail}`);
+    }
+    const blob = await response.blob();
+    const filename = filenameFromDisposition(response.headers.get("content-disposition"), `${slideId}.pptx`);
+    return { blob, filename };
+  } finally {
+    done();
+  }
 }
 
 export function searchBilibiliVideos(keyword: string) {

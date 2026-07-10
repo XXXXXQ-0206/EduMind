@@ -137,11 +137,11 @@ export function AgentConversationPanel({
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-5">
             {visibleMessages.length ? (
               <div className="mx-auto flex max-w-4xl flex-col gap-4">
+                {result}
                 {visibleMessages.map((message) => (
                   <AgentBubble key={message.id} message={message} />
                 ))}
                 {busy ? <AgentThinking /> : null}
-                {result}
               </div>
             ) : (
               <div className="mx-auto grid min-h-[46vh] max-w-4xl place-items-center">

@@ -31,7 +31,18 @@ export type TaskStart = { ok: true; stream?: string; events?: string };
 export type ChatMessage = { role: "user" | "assistant"; content: string; at?: number };
 export type ChatInfo = { id: string; title?: string; createdAt?: number; updated_at?: string };
 export type RecordItem = { id: string; title?: string; created_at?: string; updated_at?: string; at?: number; status?: string; error?: string };
+export type SlideRecord = RecordItem & { pageCount?: number; pptxReady?: boolean; downloadUrl?: string };
 export type TaskEvent = { type: string; value?: string; error?: string; answer?: string; [key: string]: unknown };
+export type SlideWorkflowResult = {
+  ok: true;
+  slideId: string;
+  title?: string;
+  pageCount?: number;
+  pptxReady?: boolean;
+  downloadUrl?: string;
+  pptxAssetUrl?: string;
+  slides?: Array<Record<string, unknown>>;
+};
 export type WrongbookSummary = {
   ok: true;
   stats: Record<string, number>;
@@ -77,6 +88,14 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+function filenameFromDisposition(header: string | null, fallback: string) {
+  if (!header) return fallback;
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8?.[1]) return decodeURIComponent(utf8[1].replace(/"/g, ""));
+  const plain = /filename="?([^";]+)"?/i.exec(header);
+  return plain?.[1] || fallback;
 }
 
 export const api = {
@@ -129,6 +148,34 @@ export const api = {
     }
     const endpoint = kind === "lesson-plan" ? "/lesson-plan" : kind === "smartnotes" ? "/smartnotes" : kind === "chat" ? "/chat" : `/${kind}`;
     return request(endpoint, { method: "POST", body: JSON.stringify(payload) });
+  },
+  async downloadSlidePptx(slideId: string) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), env.timeout);
+    const token = getAuthToken();
+    const headers = new Headers();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+
+    try {
+      const response = await fetch(apiUrl(`/slides/${encodeURIComponent(slideId)}/download`), { headers, signal: controller.signal });
+      if (!response.ok) {
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          const body = (await response.json()) as ApiErrorPayload;
+          throw new ApiError(body?.detail || body?.error || `请求失败：${response.status}`, response.status);
+        }
+        const text = await response.text();
+        throw new ApiError(text || `请求失败：${response.status}`, response.status);
+      }
+      const blob = await response.blob();
+      const filename = filenameFromDisposition(response.headers.get("content-disposition"), `${slideId}.pptx`);
+      return { blob, filename };
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  },
+  async listSlides() {
+    return request<{ ok: true; slides: SlideRecord[] }>("/slides");
   },
   async listChats(role: Role) {
     return request<{ ok: true; chats: ChatInfo[] }>(`/chats?role=${role}`);

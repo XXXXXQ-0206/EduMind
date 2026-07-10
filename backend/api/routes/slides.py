@@ -1,7 +1,8 @@
 """
 幻灯片 API 路由
-生成大纲 + 配图（即梦纯图无文字），仅展示不生成 pptx
+生成大纲 + 配图（即梦纯图无文字），并导出固定模板 pptx
 """
+import asyncio
 import logging
 import uuid
 from pathlib import Path
@@ -19,6 +20,7 @@ from utils.api_errors import safe_error_response
 from utils.auth import require_auth
 from utils.auth_contracts import AuthUser
 from utils.feature_support import build_selected_files_context
+from utils.slides_pptx import build_simple_slides_pptx
 from utils.storage import json_storage, list_files_for_user, owner_payload, record_belongs_to_user
 
 
@@ -66,9 +68,37 @@ def _download_response(content: bytes, filename: str) -> Response:
     )
 
 
+def _download_route(slide_id: str) -> str:
+    return f"/slides/{quote(slide_id, safe='')}/download"
+
+
+async def _build_and_store_pptx(
+    slide_id: str,
+    title: str,
+    slides: List[dict],
+    object_store,
+) -> dict:
+    pptx_key = f"slides/{slide_id}/{slide_id}.pptx"
+    pptx_path = (config.storage_dir / "slides" / slide_id / f"{slide_id}.pptx").resolve()
+    await asyncio.to_thread(
+        build_simple_slides_pptx,
+        slides,
+        pptx_path,
+        deck_title=title,
+        object_store=object_store,
+    )
+    asset_url = await object_store.put_file(pptx_key, pptx_path)
+    return {
+        "pptxReady": True,
+        "pptxObjectKey": pptx_key,
+        "pptxAssetUrl": _absolute_asset_url(asset_url, object_key=pptx_key),
+        "downloadUrl": _download_route(slide_id),
+    }
+
+
 @router.post("/slides/generate")
 async def generate_slides(request: SlidesGenerateRequest, user: AuthUser = Depends(require_auth)):
-    """生成大纲与配图：返回 slideId、大纲与插图预览（不生成 pptx）。"""
+    """生成大纲与配图：返回 slideId、大纲、插图预览与 pptx 下载入口。"""
     topic = (request.topic or "").strip()
     if not topic:
         return JSONResponse(
@@ -112,23 +142,37 @@ async def generate_slides(request: SlidesGenerateRequest, user: AuthUser = Depen
             status_code=500,
         )
 
+    slides_payload = result.slides or []
+
     # 元数据写入 storage，供历史列表与详情使用
     meta = {
         "id": slide_id,
         "title": result.title or topic,
         "pageCount": result.page_count,
         "at": __import__("time").time() * 1000,
+        "pptxReady": False,
+        "downloadUrl": _download_route(slide_id),
         **owner_payload(user.id, user.username),
     }
+    object_store = create_object_store()
+    try:
+        meta.update(await _build_and_store_pptx(slide_id, meta["title"], slides_payload, object_store))
+    except Exception as exc:
+        logger.warning("pptx generation failed slide_id=%s error=%s", slide_id, exc)
+        meta["pptxError"] = "pptx generation failed"
+
     await json_storage.set(f"slide:{slide_id}", meta)
-    await json_storage.set(f"slide:{slide_id}:slides", result.slides or [])
+    await json_storage.set(f"slide:{slide_id}:slides", slides_payload)
 
     return {
         "ok": True,
         "slideId": slide_id,
         "title": result.title,
         "pageCount": result.page_count,
-        "slides": _normalize_slide_assets(result.slides or []),
+        "slides": _normalize_slide_assets(slides_payload),
+        "pptxReady": meta.get("pptxReady", False),
+        "downloadUrl": meta.get("downloadUrl"),
+        "pptxAssetUrl": meta.get("pptxAssetUrl"),
     }
 
 
@@ -165,19 +209,45 @@ async def download_slide(slide_id: str, user: AuthUser = Depends(require_auth)):
     except Exception:
         pptx_path = (config.storage_dir / "slides" / slide_id / f"{slide_id}.pptx").resolve()
         if not pptx_path.is_file():
-            return JSONResponse(
-                content={"ok": False, "error": "file not found"},
-                status_code=404,
-            )
-        file_url = await object_store.put_file(object_key, pptx_path)
+            slides = await json_storage.get(f"slide:{slide_id}:slides") or []
+            if not slides:
+                return JSONResponse(
+                    content={"ok": False, "error": "file not found"},
+                    status_code=404,
+                )
+            try:
+                pptx_meta = await _build_and_store_pptx(
+                    slide_id,
+                    str(meta.get("title") or slide_id),
+                    slides,
+                    object_store,
+                )
+                object_key = str(pptx_meta["pptxObjectKey"])
 
-        def remember_pptx(current):
-            next_meta = dict(current if isinstance(current, dict) else meta)
-            next_meta["pptxObjectKey"] = object_key
-            next_meta["downloadUrl"] = file_url
-            return next_meta
+                def remember_generated_pptx(current):
+                    next_meta = dict(current if isinstance(current, dict) else meta)
+                    next_meta.update(pptx_meta)
+                    return next_meta
 
-        await json_storage.update(f"slide:{slide_id}", remember_pptx, default=meta)
+                await json_storage.update(f"slide:{slide_id}", remember_generated_pptx, default=meta)
+            except Exception as exc:
+                logger.warning("pptx lazy generation failed slide_id=%s error=%s", slide_id, exc)
+                return JSONResponse(
+                    content={"ok": False, "error": "pptx generation failed"},
+                    status_code=500,
+                )
+        else:
+            file_url = await object_store.put_file(object_key, pptx_path)
+
+            def remember_pptx(current):
+                next_meta = dict(current if isinstance(current, dict) else meta)
+                next_meta["pptxReady"] = True
+                next_meta["pptxObjectKey"] = object_key
+                next_meta["pptxAssetUrl"] = _absolute_asset_url(file_url, object_key=object_key)
+                next_meta["downloadUrl"] = _download_route(slide_id)
+                return next_meta
+
+            await json_storage.update(f"slide:{slide_id}", remember_pptx, default=meta)
         content = await object_store.get_bytes(object_key)
 
     if not content:
