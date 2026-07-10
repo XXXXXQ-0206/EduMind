@@ -61,6 +61,22 @@
           </button>
           <button
             type="button"
+            class="w-8 shrink-0 rounded-2xl border border-[color:var(--nav-border)] bg-[color:var(--nav-bg)]/40 transition-colors inline-flex items-center justify-center cursor-pointer text-[color:var(--nav-text-muted)] hover:text-violet-400 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="下载PPT"
+            title="下载PPT"
+            :disabled="slide.status === 'generating' || downloadingSlideId === slide.id"
+            @click.stop="downloadSlidesPptx(slide)"
+          >
+            <svg v-if="downloadingSlideId !== slide.id" viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0 4-4m-4 4-4-4" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 20h14" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" class="size-4 animate-spin" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 3a9 9 0 1 1-9 9" />
+            </svg>
+          </button>
+          <button
+            type="button"
             class="w-8 shrink-0 rounded-2xl border border-[color:var(--nav-border)] bg-[color:var(--nav-bg)]/40 hover:bg-[color:var(--nav-hover-bg-strong)] transition-colors inline-flex items-center justify-center cursor-pointer"
             @click.stop="removeSlides(slide.id)"
             aria-label="删除幻灯片"
@@ -75,6 +91,7 @@
       </li>
     </ul>
     <div v-else class="text-xs text-[color:var(--nav-text-muted)]">暂无历史幻灯片</div>
+    <div v-if="downloadError" class="mt-2 text-xs text-rose-400">{{ downloadError }}</div>
 
     <!-- 历史项预览弹窗 -->
     <Teleport to="body">
@@ -119,7 +136,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import { getSlideDetail, type SlideItem } from "../../lib/api";
+import { downloadSlidePptx, getSlideDetail, type SlideItem } from "../../lib/api";
 import { getUserScopedStorageKey, readScopedStorage } from "../../lib/userStorage";
 
 export type SlideRecord = {
@@ -138,6 +155,8 @@ const previewSlideId = ref<string | null>(null);
 const previewTitle = ref("");
 const previewSlides = ref<SlideItem[]>([]);
 const previewLoading = ref(false);
+const downloadingSlideId = ref("");
+const downloadError = ref("");
 
 const SLIDES_STORAGE_KEY = "edumind-slides-history";
 const scopedSlidesStorageKey = () => getUserScopedStorageKey(SLIDES_STORAGE_KEY);
@@ -185,6 +204,31 @@ const openPreview = async (slide: SlideRecord) => {
     previewSlides.value = [];
   } finally {
     previewLoading.value = false;
+  }
+};
+
+const savePptxBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+};
+
+const downloadSlidesPptx = async (slide: SlideRecord) => {
+  if (!slide.id || slide.status === "generating" || downloadingSlideId.value) return;
+  downloadingSlideId.value = slide.id;
+  downloadError.value = "";
+  try {
+    const { blob, filename } = await downloadSlidePptx(slide.id);
+    savePptxBlob(blob, filename);
+  } catch (e) {
+    downloadError.value = e instanceof Error ? e.message : "PPT 下载失败";
+  } finally {
+    downloadingSlideId.value = "";
   }
 };
 

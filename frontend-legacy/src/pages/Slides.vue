@@ -142,6 +142,18 @@
               <div class="flex items-center gap-2">
                 <button
                   type="button"
+                  class="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white text-sm font-semibold shadow-[0_10px_18px_rgba(139,92,246,0.25)] hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                  :disabled="pptDownloading"
+                  @click="downloadCurrentPptx"
+                >
+                  <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0 4-4m-4 4-4-4" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 20h14" />
+                  </svg>
+                  {{ pptDownloading ? "正在准备PPT" : "移植到ppt文件" }}
+                </button>
+                <button
+                  type="button"
                   class="px-4 py-2 rounded-2xl bg-[color:var(--nav-bg)] border border-[color:var(--nav-border)] hover:bg-[color:var(--nav-hover-bg-strong)] text-sm text-[color:var(--app-text)] transition-colors cursor-pointer"
                   @click="showOutlineSummary = true"
                 >
@@ -170,6 +182,12 @@
                 class="text-sm text-amber-600 mb-4 shrink-0"
               >
                 目前有 {{ missingImageCount }} 页配图还没有补齐，你可以稍后再试一次。
+              </p>
+              <p
+                v-if="pptDownloadError"
+                class="text-sm text-rose-600 mb-4 shrink-0"
+              >
+                {{ pptDownloadError }}
               </p>
               <div class="space-y-5 min-h-[70vh] max-h-[80vh] overflow-y-auto pr-2 flex-1">
                 <div
@@ -295,7 +313,7 @@ import SlidesHistoryPanel, { type SlideRecord } from "../components/Slides/Slide
 import SlidesTopicBar from "../components/Slides/SlidesTopicBar.vue";
 import GenerationStatusCard from "../components/common/GenerationStatusCard.vue";
 import { env } from "../config/env";
-import { friendlyTaskMessage, generateSlides, getSlideDetail, err as apiErr, type SlideItem } from "../lib/api";
+import { downloadSlidePptx, friendlyTaskMessage, generateSlides, getSlideDetail, err as apiErr, type SlideItem } from "../lib/api";
 import { getUserScopedStorageKey, readScopedStorage } from "../lib/userStorage";
 
 const learningFolderKey = computed(() => getUserScopedStorageKey("edumind-learning-folder-teacher"));
@@ -311,6 +329,8 @@ const generatedSlideId = ref("");
 const generatedTitle = ref("");
 const generatedSlides = ref<SlideItem[]>([]);
 const downloadUrl = ref("");
+const pptDownloading = ref(false);
+const pptDownloadError = ref("");
 const generateError = ref("");
 const topicBarKey = ref(0);
 const historyPanelRef = ref<InstanceType<typeof SlidesHistoryPanel> | null>(null);
@@ -416,6 +436,7 @@ const handleStart = async () => {
   generatedTitle.value = "";
   generatedSlides.value = [];
   downloadUrl.value = "";
+  pptDownloadError.value = "";
 
   try {
     const materialIds = includeMaterials.value ? loadLearningFolderIds() : [];
@@ -435,6 +456,7 @@ const handleStart = async () => {
     generatedTitle.value = res.title ?? trimmed;
     generatedSlides.value = res.slides ?? [];
     downloadUrl.value = res.downloadUrl ? `${env.backend}${res.downloadUrl}` : "";
+    pptDownloadError.value = "";
     finalizeSlideRecord(pendingRecordId, res.slideId, trimmed, res.pageCount ?? pageCount.value);
   } catch (e) {
     generateError.value = apiErr(e);
@@ -449,6 +471,7 @@ const newSlides = () => {
   generatedTitle.value = "";
   generatedSlides.value = [];
   downloadUrl.value = "";
+  pptDownloadError.value = "";
   generateError.value = "";
   topic.value = "";
   topicBarKey.value += 1;
@@ -465,7 +488,8 @@ async function loadSlideFromQuery(slideId: string) {
       generatedSlideId.value = res.slide.id;
       generatedTitle.value = res.slide.title ?? "";
       generatedSlides.value = res.slides;
-      downloadUrl.value = "";
+      downloadUrl.value = res.slide.downloadUrl ? `${env.backend}${res.slide.downloadUrl}` : "";
+      pptDownloadError.value = "";
       topic.value = res.slide.title ?? "";
     }
   } catch {
@@ -474,6 +498,31 @@ async function loadSlideFromQuery(slideId: string) {
     connecting.value = false;
   }
 }
+
+const savePptxBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+};
+
+const downloadCurrentPptx = async () => {
+  if (!generatedSlideId.value || pptDownloading.value) return;
+  pptDownloading.value = true;
+  pptDownloadError.value = "";
+  try {
+    const { blob, filename } = await downloadSlidePptx(generatedSlideId.value);
+    savePptxBlob(blob, filename);
+  } catch (e) {
+    pptDownloadError.value = apiErr(e);
+  } finally {
+    pptDownloading.value = false;
+  }
+};
 
 watch(
   () => route.query.slideId as string | undefined,
