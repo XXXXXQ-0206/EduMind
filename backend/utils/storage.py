@@ -840,6 +840,7 @@ async def delete_lesson_plan(lesson_plan_id: str) -> None:
     await json_storage.delete(f"lesson_plan:{lesson_plan_id}:plan")
     object_store = create_object_store()
     await object_store.delete(f"lesson_plans/{lesson_plan_id}.pdf")
+    await object_store.delete(f"lesson_plans/{lesson_plan_id}.docx")
     await object_store.delete_prefix(f"lesson_plans/{lesson_plan_id}")
 
 
