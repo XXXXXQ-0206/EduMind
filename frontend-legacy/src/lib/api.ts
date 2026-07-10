@@ -970,7 +970,19 @@ export function deletePodcast(id: string) {
 }
 
 // ---------- 教案 (lesson plan) ----------
-export type LessonPlanMeta = { id: string; title?: string; created_at?: string; updated_at?: string; at?: number };
+export type LessonPlanMeta = {
+  id: string;
+  title?: string;
+  created_at?: string;
+  updated_at?: string;
+  at?: number;
+  docxUrl?: string;
+  templateId?: string;
+  templateName?: string;
+  templateMode?: "default" | "docx" | "text";
+  templateApplied?: boolean;
+  templateStyleSourceAvailable?: boolean;
+};
 export type LessonPlanTeachingGoals = { knowledge?: string; process?: string; emotion?: string };
 export type LessonPlanProcessStep = { title: string; content: string };
 export type LessonPlanData = {
@@ -982,13 +994,27 @@ export type LessonPlanData = {
   process?: LessonPlanProcessStep[];
   homework?: string;
 };
+export type LessonPlanTemplateMeta = {
+  id: string;
+  originalName?: string;
+  uploadedAt?: number;
+  size?: number;
+  textPreview?: string;
+  textChars?: number;
+  placeholders?: string[];
+  styleSourceAvailable?: boolean;
+};
 
-export function createLessonPlan(payload: { topic: string; includeMaterials?: boolean; materialIds?: string[] }) {
+export function createLessonPlan(payload: { topic: string; includeMaterials?: boolean; materialIds?: string[]; templateId?: string }) {
   return req<{
     ok: true;
     lessonPlanId: string;
     plan: LessonPlanData;
     meta: LessonPlanMeta;
+    docxUrl?: string;
+    templateApplied?: boolean;
+    templateMode?: "default" | "docx" | "text";
+    templateName?: string;
   }>(`${env.backend}/lesson-plan`, {
     method: "POST",
     headers: jsonHeaders(),
@@ -1022,6 +1048,46 @@ export function lessonPlanPdfUrl(id: string): string {
   } catch {
     return base;
   }
+}
+
+export function resolveBackendUrl(value?: string | null): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    return new URL(raw, env.backend).toString();
+  } catch {
+    return raw;
+  }
+}
+
+export function lessonPlanDocxUrl(id: string): string {
+  const base = `${env.backend}/lesson-plans/${encodeURIComponent(id)}/docx`;
+  try {
+    const token = getAuthToken();
+    if (!token) return base;
+    const parsed = new URL(base);
+    parsed.searchParams.set("token", token);
+    return parsed.toString();
+  } catch {
+    return base;
+  }
+}
+
+export function getLessonPlanTemplate() {
+  return req<{ ok: true; template: LessonPlanTemplateMeta | null }>(`${env.backend}/lesson-plan/template`, { method: "GET" });
+}
+
+export function uploadLessonPlanTemplate(file: File) {
+  const body = new FormData();
+  body.append("file", file);
+  return req<{ ok: true; template: LessonPlanTemplateMeta }>(`${env.backend}/lesson-plan/template`, {
+    method: "POST",
+    body,
+  });
+}
+
+export function deleteLessonPlanTemplate() {
+  return req<{ ok: true }>(`${env.backend}/lesson-plan/template`, { method: "DELETE" });
 }
 
 export function connectPodcastStream(pid: string, onEvent: (ev: PodcastEvent) => void) {
