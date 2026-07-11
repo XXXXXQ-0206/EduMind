@@ -118,7 +118,7 @@ const props = withDefaults(
   {
     isLoading: false,
     pageCountValue: 10,
-    pageCountOptions: () => [10, 15, 20],
+    pageCountOptions: () => [5, 10],
     materialsLabel: "备课资料",
     placeholder: "输入主题生成教学幻灯片（例如：牛顿运动定律）",
   }
@@ -131,7 +131,7 @@ const showInclude = ref(false);
 const showCount = ref(false);
 
 const pageCount = computed(() => props.pageCountValue ?? 10);
-const pageCountOptions = computed(() => props.pageCountOptions ?? [10, 15, 20]);
+const pageCountOptions = computed(() => props.pageCountOptions ?? [5, 10]);
 
 const toggleInclude = () => {
   showInclude.value = !showInclude.value;

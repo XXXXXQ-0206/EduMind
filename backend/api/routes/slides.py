@@ -6,7 +6,7 @@ import asyncio
 import logging
 import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 class SlidesGenerateRequest(BaseModel):
     topic: str
-    pageCount: Optional[int] = 10
+    pageCount: Literal[5, 10] = 10
     includeMaterials: Optional[bool] = False
     materialIds: Optional[List[str]] = None
 
@@ -105,7 +105,7 @@ async def generate_slides(request: SlidesGenerateRequest, user: AuthUser = Depen
             content={"ok": False, "error": "请输入主题"},
             status_code=400,
         )
-    page_count = max(5, min(25, request.pageCount or 10))
+    page_count = request.pageCount
     include_materials = bool(request.includeMaterials)
     material_ids = request.materialIds or []
 
@@ -143,6 +143,18 @@ async def generate_slides(request: SlidesGenerateRequest, user: AuthUser = Depen
         )
 
     slides_payload = result.slides or []
+    if len(slides_payload) != page_count or any(not slide.get("imageUrl") for slide in slides_payload):
+        logger.error(
+            "incomplete slide assets slide_id=%s expected=%s actual=%s images=%s",
+            slide_id,
+            page_count,
+            len(slides_payload),
+            sum(bool(slide.get("imageUrl")) for slide in slides_payload),
+        )
+        return JSONResponse(
+            content={"ok": False, "error": "幻灯片配图生成不完整，请重试"},
+            status_code=502,
+        )
 
     # 元数据写入 storage，供历史列表与详情使用
     meta = {

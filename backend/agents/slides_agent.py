@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agents.base import LLMAgent, AgentInput, AgentOutput
@@ -24,6 +25,16 @@ logger = logging.getLogger(__name__)
 
 IMAGE_CONCURRENCY = 2
 IMAGE_TIMEOUT_SEC = 18
+ALLOWED_PAGE_COUNTS = (5, 10)
+
+
+def normalize_page_count(value: Any) -> int:
+    """Keep slide generation on the two page counts supported by the UI."""
+    try:
+        page_count = int(value)
+    except (TypeError, ValueError):
+        return 10
+    return page_count if page_count in ALLOWED_PAGE_COUNTS else 10
 
 
 class SlidesInput(AgentInput):
@@ -88,7 +99,7 @@ class SlidesAgent(LLMAgent):
     ) -> SlidesOutput:
         try:
             topic = (input_data.topic or "").strip()
-            page_count = max(5, min(25, int(input_data.page_count or 10)))
+            page_count = normalize_page_count(input_data.page_count)
             materials_text = input_data.materials_text or ""
             slide_id = input_data.slide_id or f"slide-{uuid.uuid4().hex[:12]}"
 
@@ -158,6 +169,29 @@ class SlidesAgent(LLMAgent):
 
                         if attempt < 2:
                             await asyncio.sleep(1.2 * (attempt + 1))
+
+                    if not img_path:
+                        # Remote image providers can time out or throttle individual requests.
+                        # Create a local illustration so every requested slide still has an
+                        # image asset instead of returning a partially populated deck.
+                        try:
+                            img_path = await asyncio.to_thread(
+                                self._create_fallback_illustration,
+                                save_dir,
+                                i + 1,
+                            )
+                            logger.warning(
+                                "using fallback illustration slide_id=%s page=%s",
+                                slide_id,
+                                i + 1,
+                            )
+                        except Exception as fallback_exc:
+                            logger.exception(
+                                "fallback illustration failed slide_id=%s page=%s error=%s",
+                                slide_id,
+                                i + 1,
+                                fallback_exc,
+                            )
 
                     if img_path:
                         suffix = img_path.suffix.lower() if img_path.suffix else ".png"
@@ -284,3 +318,48 @@ class SlidesAgent(LLMAgent):
         if key_points:
             return f"{ILLUSTRATION_PROMPT_PREFIX}{title}；核心知识点：{key_points}{ILLUSTRATION_PROMPT_SUFFIX}"
         return f"{ILLUSTRATION_PROMPT_PREFIX}{title}{ILLUSTRATION_PROMPT_SUFFIX}"
+
+    @staticmethod
+    def _create_fallback_illustration(save_dir: Path, page_index: int) -> Path:
+        """Create a text-free local illustration when the remote provider is unavailable."""
+        from PIL import Image, ImageDraw
+
+        width, height = 1280, 720
+        palettes = [
+            ((15, 118, 110), (94, 234, 212), (255, 255, 255, 42)),
+            ((30, 64, 175), (125, 211, 252), (255, 255, 255, 46)),
+            ((126, 34, 206), (216, 180, 254), (255, 255, 255, 44)),
+            ((180, 83, 9), (253, 186, 116), (255, 255, 255, 42)),
+            ((190, 24, 93), (249, 168, 212), (255, 255, 255, 44)),
+        ]
+        start, end, accent = palettes[(page_index - 1) % len(palettes)]
+        image = Image.new("RGB", (width, height), start)
+        draw = ImageDraw.Draw(image, "RGBA")
+        for y in range(height):
+            ratio = y / max(1, height - 1)
+            color = tuple(int(start[n] + (end[n] - start[n]) * ratio) for n in range(3))
+            draw.line((0, y, width, y), fill=color + (255,))
+
+        offset = page_index * 37
+        draw.ellipse((760 - offset, -120, 1260 - offset, 380), fill=accent)
+        draw.ellipse((-160 + offset, 360, 360 + offset, 880), fill=(255, 255, 255, 30))
+        draw.rounded_rectangle(
+            (150, 130, width - 150, height - 130),
+            radius=72,
+            fill=(5, 15, 35, 38),
+            outline=(255, 255, 255, 72),
+            width=3,
+        )
+        for index in range(5):
+            x = 260 + index * 155
+            bar_height = 90 + ((index + page_index) % 4) * 55
+            draw.rounded_rectangle(
+                (x, height - 190 - bar_height, x + 92, height - 190),
+                radius=28,
+                fill=(255, 255, 255, 72 + index * 18),
+            )
+
+        save_dir.mkdir(parents=True, exist_ok=True)
+        output_path = save_dir / f"page-{page_index:02d}-fallback.png"
+        image.save(output_path, format="PNG", optimize=True)
+        return output_path

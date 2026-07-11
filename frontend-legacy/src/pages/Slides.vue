@@ -110,7 +110,7 @@
                   :onSelectInclude="setIncludeMaterials"
                   :onSelectPageCount="setPageCount"
                   :pageCountValue="pageCount"
-                  :pageCountOptions="[10, 15, 20]"
+                  :pageCountOptions="[5, 10]"
                   materialsLabel="备课资料"
                 />
               </div>
