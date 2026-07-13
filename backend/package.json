@@ -7,7 +7,7 @@
     "start:bili-bridge": "node services/bilibiliBridgeServer.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.20.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "cors": "^2.8.5",
     "express": "^5.1.0"
   }
