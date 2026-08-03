@@ -34,7 +34,7 @@
   "devDependencies": {
     "@types/tough-cookie": "^4.0.5",
     "tsx": "^4.19.2",
-    "typescript": "^5.8.2"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@langchain/core": "^1.2.1",
@@ -45,7 +45,7 @@
     "axios": "^1.8.4",
     "express": "^5.1.0",
     "langchain": "^1.5.2",
-    "tough-cookie": "^5.1.2"
+    "tough-cookie": "^6.0.2"
   },
   "keywords": [
     "bilibili",
