@@ -32,7 +32,7 @@ ffmpeg-python==0.2.0
 
 # PDF 生成
 reportlab==4.2.5
-pypdf==6.13.3
+pypdf==6.15.0
 
 # 数据存储
 numpy==1.26.4
