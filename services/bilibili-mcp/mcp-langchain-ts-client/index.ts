@@ -107,13 +107,7 @@ export async function MCPTool({
 function createSchemaModel(
   inputSchema: {
     type: "object";
-    properties?:
-      | import("zod").objectOutputType<
-          {},
-          import("zod").ZodTypeAny,
-          "passthrough"
-        >
-      | undefined;
+    properties?: Record<string, unknown> | undefined;
   } & { [k: string]: unknown }
 ): any {
   if (inputSchema.type !== "object" || !inputSchema.properties) {
